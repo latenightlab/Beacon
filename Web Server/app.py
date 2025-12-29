@@ -4,7 +4,7 @@ import time
 app = Flask(__name__)
 
 # Simple shared secret for location updates
-AUTH_TOKEN = "wefig24qoe9fnqunq08hnwf09dnxqp89r20hf93ndo"
+AUTH_TOKEN = "SECRET LONG AUTH TOKEN"
 
 # Stores last known location in memory
 LAST_LOCATION = None
@@ -131,17 +131,16 @@ def index():
     .status-resting { color: #bbbbbb; font-weight: 800; }
 
     /* ===== WATERMARK ===== */
-    #watermark {
-      position: absolute;
-      right: 10px;
-      bottom: 10px;
-      z-index: 1000;
-      opacity: 0.6;
-      width: 140px;
-      height: auto;
-      pointer-events: none; /* do not block map interaction */
-      user-select: none;
-    }
+#watermark {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 9999;
+  width: 160px;
+  height: auto;
+  opacity: 0.7;
+  pointer-events: none;
+}
   </style>
 </head>
 <body>
@@ -163,9 +162,9 @@ def index():
 
   <!-- ===== LINKS ROW ===== -->
   <div id="info-links">
-    <a href="#" target="_blank" rel="noopener">Donate</a>
+    <a href="https://checkout.square.site/merchant/MLNWA748BSEAE/checkout/2CVQUP4VULUZ7BV6VTME4PYP" target="_blank" rel="noopener">Donate</a>
     <a href="#" target="_blank" rel="noopener">Route</a>
-    <a href="#" target="_blank" rel="noopener">Facebook</a>
+    <a href="https://www.facebook.com/PontypriddRhonddaRoundTable" target="_blank" rel="noopener">Facebook</a>
     <a href="#" target="_blank" rel="noopener">Website</a>
   </div>
 </div>
@@ -231,8 +230,7 @@ def index():
 </script>
 
 <!-- ===== WATERMARK IMAGE ===== -->
-<img id="watermark" src="/static/watermark.png" alt="">
-
+<img src="/static/watermark.png" id="watermark" alt="">
 </body>
 </html>
 """

@@ -8,7 +8,7 @@ import paho.mqtt.client as mqtt
 
 # ---------------- CONFIG ----------------
 SERVER_URL = "https://santa.pontypriddroundtable.org.uk/api/update-location"
-AUTH_TOKEN = "wefig24qoe9fnqunq08hnwf09dnxqp89r20hf93ndo"
+AUTH_TOKEN = "SECRET LONG AUTH TOKEN"
 INTERVAL_SECONDS = 1
 HTTP_TIMEOUT_SECONDS = 5
 
