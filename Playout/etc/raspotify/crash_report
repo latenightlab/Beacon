@@ -1,0 +1,242 @@
+-- System Info --
+
+Linux PONTY-SANTA 6.12.47+rpt-rpi-v8 #1 SMP PREEMPT Debian 1:6.12.47-1+rpt1 (2025-09-16) aarch64 GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=13.2
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+
+-- Logs --
+
+Dec 22 21:33:19 PONTY-SANTA systemd[1]: Started raspotify.service - Raspotify (Spotify Connect Client).
+Dec 22 21:33:19 PONTY-SANTA librespot[793]: [2025-12-22T21:33:19Z INFO  librespot] librespot 0.8.0 ea813143 (Built on 2025-11-24, Build ID: SHcE8lwM, Profile: release)
+Dec 22 21:33:19 PONTY-SANTA librespot[793]: [2025-12-22T21:33:19Z INFO  librespot_playback::mixer::softmixer] Mixing with softvol and volume control: Log(60.0)
+Dec 22 21:33:19 PONTY-SANTA librespot[793]: [2025-12-22T21:33:19Z INFO  librespot_playback::convert] Converting with ditherer: tpdf
+Dec 22 21:33:19 PONTY-SANTA librespot[793]: [2025-12-22T21:33:19Z INFO  librespot_playback::audio_backend::alsa] Using AlsaSink with format: S16
+Dec 22 21:33:20 PONTY-SANTA librespot[793]: [2025-12-22T21:33:20Z ERROR librespot] could not initialize spirc: Service unavailable { client error (Connect) }
+Dec 22 21:33:20 PONTY-SANTA systemd[1]: raspotify.service: Main process exited, code=exited, status=1/FAILURE
+Dec 22 21:33:20 PONTY-SANTA systemd[1]: raspotify.service: Failed with result 'exit-code'.
+Dec 22 21:33:20 PONTY-SANTA systemd[1]: raspotify.service: Triggering OnFailure= dependencies.
+Dec 22 21:33:30 PONTY-SANTA systemd[1]: Started raspotify.service - Raspotify (Spotify Connect Client).
+Dec 22 21:33:30 PONTY-SANTA librespot[911]: [2025-12-22T21:33:30Z INFO  librespot] librespot 0.8.0 ea813143 (Built on 2025-11-24, Build ID: SHcE8lwM, Profile: release)
+Dec 22 21:33:30 PONTY-SANTA librespot[911]: [2025-12-22T21:33:30Z INFO  librespot_playback::mixer::softmixer] Mixing with softvol and volume control: Log(60.0)
+Dec 22 21:33:30 PONTY-SANTA librespot[911]: [2025-12-22T21:33:30Z INFO  librespot_playback::convert] Converting with ditherer: tpdf
+Dec 22 21:33:30 PONTY-SANTA librespot[911]: [2025-12-22T21:33:30Z INFO  librespot_playback::audio_backend::alsa] Using AlsaSink with format: S16
+Dec 22 21:33:31 PONTY-SANTA librespot[911]: [2025-12-22T21:33:31Z INFO  librespot_discovery] Published zeroconf service
+Dec 22 21:33:39 PONTY-SANTA librespot[911]: [2025-12-22T21:33:39Z ERROR librespot] could not initialize spirc: Service unavailable { client error (Connect) }
+Dec 22 21:33:39 PONTY-SANTA systemd[1]: raspotify.service: Main process exited, code=exited, status=1/FAILURE
+Dec 22 21:33:39 PONTY-SANTA systemd[1]: raspotify.service: Failed with result 'exit-code'.
+Dec 22 21:33:39 PONTY-SANTA systemd[1]: raspotify.service: Triggering OnFailure= dependencies.
+Dec 22 21:33:49 PONTY-SANTA systemd[1]: Started raspotify.service - Raspotify (Spotify Connect Client).
+Dec 22 21:33:49 PONTY-SANTA librespot[986]: [2025-12-22T21:33:49Z INFO  librespot] librespot 0.8.0 ea813143 (Built on 2025-11-24, Build ID: SHcE8lwM, Profile: release)
+Dec 22 21:33:49 PONTY-SANTA librespot[986]: [2025-12-22T21:33:49Z INFO  librespot_playback::mixer::softmixer] Mixing with softvol and volume control: Log(60.0)
+Dec 22 21:33:49 PONTY-SANTA librespot[986]: [2025-12-22T21:33:49Z INFO  librespot_playback::convert] Converting with ditherer: tpdf
+Dec 22 21:33:49 PONTY-SANTA librespot[986]: [2025-12-22T21:33:49Z INFO  librespot_playback::audio_backend::alsa] Using AlsaSink with format: S16
+Dec 22 21:33:50 PONTY-SANTA librespot[986]: [2025-12-22T21:33:50Z INFO  librespot_discovery] Published zeroconf service
+Dec 22 21:33:59 PONTY-SANTA librespot[986]: [2025-12-22T21:33:59Z ERROR librespot] could not initialize spirc: Service unavailable { client error (Connect) }
+Dec 22 21:33:59 PONTY-SANTA systemd[1]: raspotify.service: Main process exited, code=exited, status=1/FAILURE
+Dec 22 21:33:59 PONTY-SANTA systemd[1]: raspotify.service: Failed with result 'exit-code'.
+Dec 22 21:33:59 PONTY-SANTA systemd[1]: raspotify.service: Triggering OnFailure= dependencies.
+Dec 22 21:34:10 PONTY-SANTA systemd[1]: Started raspotify.service - Raspotify (Spotify Connect Client).
+Dec 22 21:34:10 PONTY-SANTA librespot[1045]: [2025-12-22T21:34:10Z INFO  librespot] librespot 0.8.0 ea813143 (Built on 2025-11-24, Build ID: SHcE8lwM, Profile: release)
+Dec 22 21:34:10 PONTY-SANTA librespot[1045]: [2025-12-22T21:34:10Z INFO  librespot_playback::mixer::softmixer] Mixing with softvol and volume control: Log(60.0)
+Dec 22 21:34:10 PONTY-SANTA librespot[1045]: [2025-12-22T21:34:10Z INFO  librespot_playback::convert] Converting with ditherer: tpdf
+Dec 22 21:34:10 PONTY-SANTA librespot[1045]: [2025-12-22T21:34:10Z INFO  librespot_playback::audio_backend::alsa] Using AlsaSink with format: S16
+Dec 22 21:34:11 PONTY-SANTA librespot[1045]: [2025-12-22T21:34:11Z INFO  librespot_discovery] Published zeroconf service
+Dec 22 21:34:20 PONTY-SANTA librespot[1045]: [2025-12-22T21:34:20Z ERROR librespot] could not initialize spirc: Service unavailable { client error (Connect) }
+Dec 22 21:34:20 PONTY-SANTA systemd[1]: raspotify.service: Main process exited, code=exited, status=1/FAILURE
+Dec 22 21:34:20 PONTY-SANTA systemd[1]: raspotify.service: Failed with result 'exit-code'.
+Dec 22 21:34:20 PONTY-SANTA systemd[1]: raspotify.service: Triggering OnFailure= dependencies.
+
+-- Config --
+
+LIBRESPOT_ONEVENT="/opt/audio-hub/spotify_event.sh"
+
+-- Ouput of aplay -l --
+
+**** List of PLAYBACK Hardware Devices ****
+card 0: Headphones [bcm2835 Headphones], device 0: bcm2835 Headphones [bcm2835 Headphones]
+  Subdevices: 8/8
+  Subdevice #0: subdevice #0
+  Subdevice #1: subdevice #1
+  Subdevice #2: subdevice #2
+  Subdevice #3: subdevice #3
+  Subdevice #4: subdevice #4
+  Subdevice #5: subdevice #5
+  Subdevice #6: subdevice #6
+  Subdevice #7: subdevice #7
+card 1: DAC [RPi DAC+], device 0: Raspberry Pi DAC+ HiFi pcm512x-hifi-0 [Raspberry Pi DAC+ HiFi pcm512x-hifi-0]
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+card 2: vc4hdmi0 [vc4-hdmi-0], device 0: MAI PCM i2s-hifi-0 [MAI PCM i2s-hifi-0]
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+card 3: vc4hdmi1 [vc4-hdmi-1], device 0: MAI PCM i2s-hifi-0 [MAI PCM i2s-hifi-0]
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+
+-- Ouput of aplay -L --
+
+null
+    Discard all samples (playback) or generate zero samples (capture)
+pipewire
+    PipeWire Sound Server
+default
+hw:CARD=Headphones,DEV=0
+    bcm2835 Headphones, bcm2835 Headphones
+    Direct hardware device without any conversions
+plughw:CARD=Headphones,DEV=0
+    bcm2835 Headphones, bcm2835 Headphones
+    Hardware device with all software conversions
+sysdefault:CARD=Headphones
+    bcm2835 Headphones, bcm2835 Headphones
+    Default Audio Device
+dmix:CARD=Headphones,DEV=0
+    bcm2835 Headphones, bcm2835 Headphones
+    Direct sample mixing device
+hw:CARD=DAC,DEV=0
+    RPi DAC+, Raspberry Pi DAC+ HiFi pcm512x-hifi-0
+    Direct hardware device without any conversions
+plughw:CARD=DAC,DEV=0
+    RPi DAC+, Raspberry Pi DAC+ HiFi pcm512x-hifi-0
+    Hardware device with all software conversions
+sysdefault:CARD=DAC
+    RPi DAC+, Raspberry Pi DAC+ HiFi pcm512x-hifi-0
+    Default Audio Device
+dmix:CARD=DAC,DEV=0
+    RPi DAC+, Raspberry Pi DAC+ HiFi pcm512x-hifi-0
+    Direct sample mixing device
+hw:CARD=vc4hdmi0,DEV=0
+    vc4-hdmi-0, MAI PCM i2s-hifi-0
+    Direct hardware device without any conversions
+plughw:CARD=vc4hdmi0,DEV=0
+    vc4-hdmi-0, MAI PCM i2s-hifi-0
+    Hardware device with all software conversions
+sysdefault:CARD=vc4hdmi0
+    vc4-hdmi-0, MAI PCM i2s-hifi-0
+    Default Audio Device
+hdmi:CARD=vc4hdmi0,DEV=0
+    vc4-hdmi-0, MAI PCM i2s-hifi-0
+    HDMI Audio Output
+dmix:CARD=vc4hdmi0,DEV=0
+    vc4-hdmi-0, MAI PCM i2s-hifi-0
+    Direct sample mixing device
+hw:CARD=vc4hdmi1,DEV=0
+    vc4-hdmi-1, MAI PCM i2s-hifi-0
+    Direct hardware device without any conversions
+plughw:CARD=vc4hdmi1,DEV=0
+    vc4-hdmi-1, MAI PCM i2s-hifi-0
+    Hardware device with all software conversions
+sysdefault:CARD=vc4hdmi1
+    vc4-hdmi-1, MAI PCM i2s-hifi-0
+    Default Audio Device
+hdmi:CARD=vc4hdmi1,DEV=0
+    vc4-hdmi-1, MAI PCM i2s-hifi-0
+    HDMI Audio Output
+dmix:CARD=vc4hdmi1,DEV=0
+    vc4-hdmi-1, MAI PCM i2s-hifi-0
+    Direct sample mixing device
+
+-- Ouput of librespot -d ? --
+
+
+	Compatible alsa device(s):
+
+	------------------------------------------------------
+
+	Device:
+
+		hw:CARD=Headphones,DEV=0
+
+	Description:
+
+		bcm2835 Headphones, bcm2835 Headphones
+		Direct hardware device without any conversions
+
+	Supported Format(s):
+
+		S16
+
+	------------------------------------------------------
+
+	Device:
+
+		plughw:CARD=Headphones,DEV=0
+
+	Description:
+
+		bcm2835 Headphones, bcm2835 Headphones
+		Hardware device with all software conversions
+
+	Supported Format(s):
+
+		S16 S24 S24_3 S32 F32 F64
+
+	------------------------------------------------------
+
+	Device:
+
+		sysdefault:CARD=Headphones
+
+	Description:
+
+		bcm2835 Headphones, bcm2835 Headphones
+		Default Audio Device
+
+	Supported Format(s):
+
+		S16 S24 S24_3 S32 F32 F64
+
+	------------------------------------------------------
+
+	Device:
+
+		hw:CARD=DAC,DEV=0
+
+	Description:
+
+		RPi DAC+, Raspberry Pi DAC+ HiFi pcm512x-hifi-0
+		Direct hardware device without any conversions
+
+	Supported Format(s):
+
+		S16 S24 S32
+
+	------------------------------------------------------
+
+	Device:
+
+		plughw:CARD=DAC,DEV=0
+
+	Description:
+
+		RPi DAC+, Raspberry Pi DAC+ HiFi pcm512x-hifi-0
+		Hardware device with all software conversions
+
+	Supported Format(s):
+
+		S16 S24 S24_3 S32 F32 F64
+
+	------------------------------------------------------
+
+	Device:
+
+		sysdefault:CARD=DAC
+
+	Description:
+
+		RPi DAC+, Raspberry Pi DAC+ HiFi pcm512x-hifi-0
+		Default Audio Device
+
+	Supported Format(s):
+
+		S16 S24 S24_3 S32 F32 F64
+
+	------------------------------------------------------
+

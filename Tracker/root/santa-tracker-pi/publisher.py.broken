@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+import time
+import json
+import struct
+import requests
+import logging
+
+import serial
+import paho.mqtt.client as mqtt
+
+# ---------------- CONFIG ----------------
+SERVER_URL = "https://santa.pontypriddroundtable.org.uk/api/update-location"
+AUTH_TOKEN = "wefig24qoe9fnqunq08hnwf09dnxqp89r20hf93ndo"
+INTERVAL_SECONDS = 15
+HTTP_TIMEOUT_SECONDS = 5
+
+# GPS device (VK-162 typically appears as /dev/ttyACM0)
+GPS_DEV = "/dev/ttyACM0"
+GPS_BAUD = 9600
+GPS_TIMEOUT = 1.0  # seconds
+
+# Local MQTT broker (on the Pi)
+MQTT_HOST = "127.0.0.1"
+MQTT_PORT = 1883
+
+# Topics your other scripts care about
+TOPIC_SPEED_KPH = "sleigh/gps/speed_kph"
+TOPIC_STATUS    = "sleigh/gps/status"
+# ----------------------------------------
+
+LOG_LEVEL = "INFO"
+
+
+# ---------------- UBX helpers ----------------
+SYNC1 = 0xB5
+SYNC2 = 0x62
+
+CLASS_NAV = 0x01
+ID_NAV_PVT = 0x07  # NAV-PVT length 92
+
+CLASS_CFG = 0x06
+ID_CFG_MSG = 0x01  # CFG-MSG
+
+
+def ubx_checksum(data: bytes):
+    ck_a = 0
+    ck_b = 0
+    for b in data:
+        ck_a = (ck_a + b) & 0xFF
+        ck_b = (ck_b + ck_a) & 0xFF
+    return ck_a, ck_b
+
+
+def ubx_packet(msg_class: int, msg_id: int, payload: bytes = b"") -> bytes:
+    length = len(payload)
+    hdr = bytes([msg_class, msg_id]) + struct.pack("<H", length) + payload
+    ck_a, ck_b = ubx_checksum(hdr)
+    return bytes([SYNC1, SYNC2]) + hdr + bytes([ck_a, ck_b])
+
+
+def cfg_msg_payload_ubx6(msg_class: int, msg_id: int, rate_i2c: int, rate_uart1: int, rate_uart2: int, rate_usb: int) -> bytes:
+    # UBX6-style CFG-MSG: msgClass,msgID,rateI2C,rateUART1,rateUART2,rateUSB
+    return bytes([msg_class, msg_id, rate_i2c & 0xFF, rate_uart1 & 0xFF, rate_uart2 & 0xFF, rate_usb & 0xFF])
+
+
+def parse_nav_pvt(payload: bytes):
+    """
+    Parse UBX-NAV-PVT (92 bytes).
+    Returns: dict with lat/lon degrees, speed m/s, fix_ok, numSV, etc.
+    """
+    if len(payload) != 92:
+        raise ValueError(f"NAV-PVT payload len {len(payload)} != 92")
+
+    iTOW = struct.unpack_from("<I", payload, 0)[0]
+    year = struct.unpack_from("<H", payload, 4)[0]
+    month = payload[6]
+    day = payload[7]
+    hour = payload[8]
+    minute = payload[9]
+    sec = payload[10]
+    valid = payload[11]
+
+    fixType = payload[20]
+    flags = payload[21]
+    numSV = payload[23]
+
+    lon = struct.unpack_from("<i", payload, 24)[0] / 1e7
+    lat = struct.unpack_from("<i", payload, 28)[0] / 1e7
+
+    # gSpeed in mm/s -> m/s
+    gSpeed_mps = struct.unpack_from("<i", payload, 60)[0] / 1000.0
+
+    fix_ok = bool(flags & 0x01) and fixType >= 2  # gnssFixOK + at least 2D/3D
+    time_ok = bool(valid & 0x03)
+
+    ts_str = f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{sec:02d}Z"
+
+    return {
+        "timestamp": time.time(),
+        "device_time": ts_str,
+        "time_ok": time_ok,
+        "iTOW_ms": iTOW,
+        "fix_type": int(fixType),
+        "fix_ok": bool(fix_ok),
+        "numSV": int(numSV),
+        "lat": float(lat),
+        "lon": float(lon),
+        "speed_mps": float(gSpeed_mps),
+        "speed_kph": float(gSpeed_mps * 3.6),
+    }
+
+
+class UbxStream:
+    def __init__(self, dev: str, baud: int, timeout: float):
+        self.ser = serial.Serial(dev, baudrate=baud, timeout=timeout)
+        self.buf = bytearray()
+
+    def close(self):
+        try:
+            self.ser.close()
+        except Exception:
+            pass
+
+    def write(self, msg_class: int, msg_id: int, payload: bytes = b""):
+        self.ser.write(ubx_packet(msg_class, msg_id, payload))
+        self.ser.flush()
+
+    def configure_receiver(self):
+        """
+        Make the receiver stream NAV-PVT on USB.
+        Also disable stale NMEA on USB (VK-162 often has broken NMEA).
+        """
+        # Enable NAV-PVT on USB (rateUSB=1)
+        self.write(CLASS_CFG, ID_CFG_MSG, cfg_msg_payload_ubx6(CLASS_NAV, ID_NAV_PVT, 0, 0, 0, 1))
+
+        # Disable NMEA sentences on USB (class F0): GGA (00), RMC (04), ZDA (08)
+        self.write(CLASS_CFG, ID_CFG_MSG, cfg_msg_payload_ubx6(0xF0, 0x00, 0, 0, 0, 0))
+        self.write(CLASS_CFG, ID_CFG_MSG, cfg_msg_payload_ubx6(0xF0, 0x04, 0, 0, 0, 0))
+        self.write(CLASS_CFG, ID_CFG_MSG, cfg_msg_payload_ubx6(0xF0, 0x08, 0, 0, 0, 0))
+
+    def read_packet(self):
+        chunk = self.ser.read(4096)
+        if chunk:
+            self.buf.extend(chunk)
+
+        while True:
+            if len(self.buf) < 8:
+                return None
+
+            sync_idx = self.buf.find(bytes([SYNC1, SYNC2]))
+            if sync_idx == -1:
+                self.buf.clear()
+                return None
+            if sync_idx > 0:
+                del self.buf[:sync_idx]
+
+            if len(self.buf) < 8:
+                return None
+
+            msg_class = self.buf[2]
+            msg_id = self.buf[3]
+            length = struct.unpack_from("<H", self.buf, 4)[0]
+            total_len = 2 + 4 + length + 2
+            if len(self.buf) < total_len:
+                return None
+
+            pkt = bytes(self.buf[:total_len])
+            del self.buf[:total_len]
+
+            hdr_plus_payload = pkt[2:-2]
+            ck_a, ck_b = ubx_checksum(hdr_plus_payload)
+            if ck_a != pkt[-2] or ck_b != pkt[-1]:
+                continue
+
+            payload = pkt[6:-2]
+            return msg_class, msg_id, payload
+
+
+def main():
+    logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
+                        format="%(asctime)s %(levelname)s %(message)s")
+
+    # MQTT client (async connect so it won't block boot)
+    mqtt_client = mqtt.Client(client_id="sleigh-tracker")
+    mqtt_client.connect_async(MQTT_HOST, MQTT_PORT, keepalive=30)
+    mqtt_client.loop_start()
+
+    session = requests.Session()
+    gps = UbxStream(GPS_DEV, GPS_BAUD, GPS_TIMEOUT)
+
+    try:
+        logging.info("Opening GPS %s @ %d", GPS_DEV, GPS_BAUD)
+        gps.configure_receiver()
+        logging.info("Configured receiver: NAV-PVT enabled on USB; NMEA disabled on USB")
+
+        last_post = 0.0
+        latest_fix = None
+
+        while True:
+            loop_start = time.time()
+
+            try:
+                # Drain stream until we find a NAV-PVT
+                deadline = time.time() + 2.0
+                nav = None
+                while time.time() < deadline:
+                    pkt = gps.read_packet()
+                    if not pkt:
+                        continue
+                    msg_class, msg_id, payload = pkt
+                    if msg_class == CLASS_NAV and msg_id == ID_NAV_PVT:
+                        nav = parse_nav_pvt(payload)
+                        break
+
+                if not nav:
+                    # No NAV-PVT arrived in time; publish "0" speed to keep other logic sane
+                    mqtt_client.publish(TOPIC_SPEED_KPH, "0.00", qos=0, retain=True)
+                    mqtt_client.publish(TOPIC_STATUS, json.dumps({
+                        "timestamp": time.time(),
+                        "fix_ok": False,
+                        "error": "no NAV-PVT received",
+                    }), qos=0, retain=False)
+                    logging.warning("No NAV-PVT received in window")
+                else:
+                    latest_fix = nav
+
+                    # ---- MQTT: ALWAYS publish speed (so volume logic keeps working) ----
+                    mqtt_client.publish(TOPIC_SPEED_KPH, f"{nav['speed_kph']:.2f}", qos=0, retain=True)
+
+                    # Optional richer status topic
+                    mqtt_client.publish(TOPIC_STATUS, json.dumps(nav), qos=0, retain=False)
+
+                    # ---- HTTP: only POST if we have a usable fix and interval elapsed ----
+                    if nav["fix_ok"]:
+                        if time.time() - last_post >= INTERVAL_SECONDS:
+                            payload = {
+                                "token": AUTH_TOKEN,
+                                "lat": float(nav["lat"]),
+                                "lon": float(nav["lon"]),
+                                "speed": float(nav["speed_mps"]),  # server expects m/s
+                                "timestamp": time.time(),
+                            }
+                            logging.info("Sending: %s", payload)
+
+                            try:
+                                r = session.post(SERVER_URL, json=payload, timeout=HTTP_TIMEOUT_SECONDS)
+                                logging.info("Server response: %s %s", r.status_code, r.text[:200])
+                                last_post = time.time()
+                            except Exception as e:
+                                logging.warning("Error posting to server: %s", e)
+                    else:
+                        logging.info("No usable fix yet – not posting to server (MQTT still published)")
+
+            except Exception as e:
+                logging.exception("Loop error: %s", e)
+
+            # Keep roughly stable timing (1Hz UBX; HTTP interval handled by last_post)
+            elapsed = time.time() - loop_start
+            time.sleep(max(0.2, 1.0 - elapsed))
+
+    finally:
+        gps.close()
+        try:
+            mqtt_client.loop_stop()
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    main()

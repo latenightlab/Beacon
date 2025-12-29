@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Audio Hub</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #121212;
+      color: #fff;
+      display: flex;
+      min-height: 100vh;
+      justify-content: center;
+      align-items: center;
+    }
+    .card {
+      background: #181818;
+      border-radius: 16px;
+      padding: 24px 28px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      max-width: 420px;
+      width: 100%;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status-pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      background: #333;
+      color: #bbb;
+    }
+    .status-pill.active {
+      background: #1db954;
+      color: #000;
+    }
+    .now-playing-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #aaa;
+      margin-bottom: 4px;
+    }
+    .track-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .track-artist {
+      font-size: 0.9rem;
+      color: #bbb;
+      margin-bottom: 12px;
+    }
+    .source-info {
+      font-size: 0.85rem;
+      margin-top: 8px;
+      color: #ccc;
+    }
+    .hint {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 6px;
+    }
+    .btn-row {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: #282828;
+      color: #fff;
+      transition: background 0.15s;
+    }
+    button.primary {
+      background: #1db954;
+      color: #000;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #333;
+    }
+    button.primary:hover {
+      background: #1ed760;
+    }
+    .sources-list {
+      font-size: 0.8rem;
+      margin-top: 4px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>
+      Audio Hub
+      <span id="status-pill" class="status-pill">Idle</span>
+    </h1>
+
+    <div class="now-playing">
+      <div class="now-playing-label">Now playing (Mopidy)</div>
+      <div id="track-title" class="track-title">—</div>
+      <div id="track-artist" class="track-artist">—</div>
+    </div>
+
+    <div class="source-info">
+      <div>External stream: <span id="external-state">No</span></div>
+      <div id="external-sources" class="sources-list"></div>
+      <div class="hint">
+        • AirPlay: select this Pi under AirPlay on iOS<br>
+        • Spotify: use "Connect" and pick this Pi<br>
+        • Android: cast via DLNA/UPnP (e.g. BubbleUPnP)
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button id="btn-play" class="primary">Play Fallback</button>
+      <button id="btn-pause">Pause Mopidy</button>
+    </div>
+  </div>
+
+  <script>
+    async function fetchStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+
+        const titleEl = document.getElementById("track-title");
+        const artistEl = document.getElementById("track-artist");
+        const extStateEl = document.getElementById("external-state");
+        const extSourcesEl = document.getElementById("external-sources");
+        const pill = document.getElementById("status-pill");
+
+        titleEl.textContent = data.track_title || "—";
+        artistEl.textContent = data.track_artist || "—";
+
+        if (data.pipewire.external_active) {
+          extStateEl.textContent = "Yes";
+          pill.textContent = "Streaming";
+          pill.classList.add("active");
+        } else {
+          extStateEl.textContent = "No";
+          pill.textContent = data.mopidy_state === "playing" ? "Fallback playing" : "Idle";
+          pill.classList.toggle("active", data.mopidy_state === "playing");
+        }
+
+        if (data.pipewire.external_sources && data.pipewire.external_sources.length > 0) {
+          extSourcesEl.textContent = "Source(s): " + data.pipewire.external_sources.join(", ");
+        } else {
+          extSourcesEl.textContent = "";
+        }
+
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function mopidyPlay() {
+      await fetch("/api/mopidy/play", { method: "POST" });
+      fetchStatus();
+    }
+
+    async function mopidyPause() {
+      await fetch("/api/mopidy/pause", { method: "POST" });
+      fetchStatus();
+    }
+
+    document.getElementById("btn-play").addEventListener("click", mopidyPlay);
+    document.getElementById("btn-pause").addEventListener("click", mopidyPause);
+
+    fetchStatus();
+    setInterval(fetchStatus, 5000);
+  </script>
+</body>
+</html>

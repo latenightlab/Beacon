@@ -1,0 +1,204 @@
+from flask import Flask, request, jsonify, Response
+import time
+
+app = Flask(__name__)
+
+AUTH_TOKEN = "wefig24qoe9fnqunq08hnwf09dnxqp89r20hf93ndo"  # must match Pi
+LAST_LOCATION = None  # will store last known location
+
+
+@app.post("/api/update-location")
+def update_location():
+    global LAST_LOCATION
+
+    data = request.get_json(silent=True) or {}
+
+    if data.get("token") != AUTH_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+
+    if "lat" not in data or "lon" not in data:
+        return jsonify({"error": "missing lat/lon"}), 400
+
+    try:
+        lat = float(data["lat"])
+        lon = float(data["lon"])
+        speed = float(data.get("speed", 0.0))
+    except ValueError:
+        return jsonify({"error": "invalid lat/lon/speed"}), 400
+
+    LAST_LOCATION = {
+        "lat": lat,
+        "lon": lon,
+        "speed": speed,
+        "timestamp": float(data.get("timestamp", time.time())),
+    }
+
+    return jsonify({"status": "ok"})
+
+
+@app.get("/api/location")
+def get_location():
+    if LAST_LOCATION is None:
+        return jsonify({"error": "no data yet"}), 404
+    return jsonify(LAST_LOCATION)
+
+
+@app.get("/")
+def index():
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Santa Tracker | Pontypridd & Rhondda Round Table</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS served locally -->
+    <link rel="stylesheet" href="/static/leaflet.css" />
+
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        width: 100%;
+        height: 100%;
+      }
+      .leaflet-control-attribution {
+        font-size: 10px;
+      }
+      /* Info bar at the top */
+      #info-bar {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+        z-index: 1000;
+        white-space: nowrap;
+      }
+      #info-bar span.label {
+        font-weight: 600;
+      }
+      #info-bar span.value {
+        margin-right: 12px;
+      }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="info-bar">
+      <span class="label">Speed:</span>
+      <span id="info-speed" class="value">–</span>
+      <span class="label">Last updated:</span>
+      <span id="info-updated" class="value">No data yet</span>
+    </div>
+
+    <!-- Leaflet JS served locally -->
+    <script src="/static/leaflet.js"></script>
+
+    <script>
+      // Start already zoomed in
+//      var map = L.map('map').setView([52.0, -1.0], 16);
+      var map = L.map('map').setView([51.3779263, -3.1237549], 16);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      // Custom icon using our local static files
+//      var santaIcon = L.icon({
+//        iconUrl: '/static/marker-icon.png',
+//        iconRetinaUrl: '/static/marker-icon-2x.png',
+//        shadowUrl: '/static/marker-shadow.png',
+//        iconSize:     [25, 41],
+//        iconAnchor:   [12, 41],
+//        popupAnchor:  [1, -34],
+//        shadowSize:   [41, 41]
+//      });
+
+	var santaIcon = L.icon({
+    	  iconUrl: '/static/santa-sleigh.png',
+    	  iconSize:     [80, 60],      // adjust size depending on your image
+    	  iconAnchor:   [30, 30],      // center bottom of the icon
+    	  shadowUrl: null              // optional, remove shadow if not needed
+	});
+
+
+      // Marker with custom icon
+//      var marker = L.marker([52.0, -1.0], { icon: santaIcon }).addTo(map);
+     var marker = L.marker([51.3779263, -3.1237549], { icon: santaIcon }).addTo(map);
+
+      // Info bar elements
+      var infoSpeed   = document.getElementById('info-speed');
+      var infoUpdated = document.getElementById('info-updated');
+
+      async function refreshLocation() {
+        try {
+          const resp = await fetch('/api/location');
+
+          if (!resp.ok) {
+            console.log('No location yet');
+            infoSpeed.textContent   = '–';
+            infoUpdated.textContent = 'No data yet';
+            return;
+          }
+
+          const data = await resp.json();
+          const lat = data.lat;
+          const lon = data.lon;
+
+          marker.setLatLng([lat, lon]);
+
+          // FORCE zoom 16 on every update
+          map.setView([lat, lon], 16);
+
+          // Speed in km/h
+//          const speedMs  = typeof data.speed === 'number' ? data.speed : 0;
+//          const speedKmh = (speedMs * 3.6).toFixed(1);
+//          infoSpeed.textContent = speedKmh + ' km/h';
+	 // Speed in mph
+	  const speedMs  = typeof data.speed === 'number' ? data.speed : 0;
+	  const speedMph = (speedMs * 2.23694).toFixed(1);
+	  infoSpeed.textContent = speedMph + ' mph';
+
+          // Last updated
+          if (data.timestamp) {
+            const ts    = new Date(data.timestamp * 1000);
+            const time  = ts.toLocaleTimeString(undefined, {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+            infoUpdated.textContent = time;
+          } else {
+            infoUpdated.textContent = 'Unknown';
+          }
+
+        } catch (e) {
+          console.error('Error fetching location', e);
+          infoUpdated.textContent = 'Error fetching data';
+        }
+      }
+
+      // Poll every 10 seconds
+      refreshLocation();
+      setInterval(refreshLocation, 10000);
+    </script>
+</body>
+</html>
+"""
+    return Response(html, mimetype="text/html")
+
+if __name__ == "__main__":
+    # Dev mode; behind Cloudflare this is OK as a first step
+    app.run(host="0.0.0.0", port=8000, debug=True)

@@ -1,0 +1,246 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Audio Playout Status</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .card { border: 1px solid #444; border-radius: 10px; padding: 12px; min-width: 280px; flex: 1; }
+    .ok { color: #2ecc71; font-weight: 700; }
+    .bad { color: #e74c3c; font-weight: 700; }
+    code, pre { background: #111; color: #ddd; padding: 8px; border-radius: 8px; overflow: auto; }
+    pre { white-space: pre-wrap; margin: 6px 0 0; }
+    .small { opacity: 0.8; font-size: 0.9em; }
+    table { width: 100%; border-collapse: collapse; }
+    td { border-top: 1px solid #333; padding: 6px; vertical-align: top; }
+
+    button { padding: 6px 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: #ddd; cursor: pointer; }
+    button:hover { filter: brightness(1.1); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btnrow { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; align-items: center; }
+    .result { margin-left: 6px; }
+    hr { border:0; border-top:1px solid #333; margin:10px 0; }
+  </style>
+</head>
+<body>
+  <h1>Audio Playout Status</h1>
+  <div class="small" id="serverTime">Loading…</div>
+
+<div class="btnrow" style="margin: 10px 0 16px 0;">
+  <a href="http://192.168.8.11:6680/iris" target="_blank" rel="noopener">
+    <button>Open Iris</button>
+  </a>
+  <a href="http://192.168.8.11:8080" target="_blank" rel="noopener">
+    <button>Open Audio UI</button>
+  </a>
+</div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Services</h2>
+      <div class="small" style="margin-bottom:8px;">
+        Buttons call <code>/api/service/&lt;unit&gt;/start|stop|restart</code> (POST)
+      </div>
+      <div id="services">Loading…</div>
+
+      <hr/>
+
+      <h3 style="margin: 0 0 6px 0;">Pi Power</h3>
+      <div class="small" style="margin-bottom:8px;">
+        These will reboot/power off the Pi running this UI.
+      </div>
+      <div class="btnrow">
+        <button onclick="powerAction('reboot')">Restart Pi</button>
+        <button onclick="powerAction('shutdown')">Shutdown Pi</button>
+        <span class="small result" id="powerResult"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connectivity</h2>
+      <div id="internet">Loading…</div>
+
+      <hr/>
+
+      <h2>MQTT</h2>
+      <div class="small">Subscribed to: <code id="topic"></code></div>
+      <div class="small">Connected: <span id="mqttConnected">—</span></div>
+      <div class="small">Last connect: <code id="mqttLastConnect">—</code></div>
+      <div class="small">Last subscribe: <code id="mqttLastSubscribe">—</code></div>
+      <div class="small">Last error: <code id="mqttLastError">—</code></div>
+      <hr/>
+      <h3 style="margin:0 0 6px 0;">Last 5 messages</h3>
+      <div id="mqtt">Loading…</div>
+    </div>
+  </div>
+
+<script>
+const ADMIN_TOKEN = "oibywgn3pq8nfb3pq9gjfh8no432893ghpfw398q";
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/status", { cache: "no-store" });
+    const d = await r.json();
+
+    document.getElementById("serverTime").textContent = "Server time: " + (d.server_time ?? "—");
+
+    // Services + buttons
+    const s = d.services || {};
+    const blocks = [];
+
+    for (const unit of Object.keys(s)) {
+      const svc = s[unit] || {};
+      const klass = svc.active ? "ok" : "bad";
+      const rid = escapeId(unit);
+
+      blocks.push(`
+        <div style="margin-bottom: 14px;">
+          <div><b>${escapeHtml(unit)}</b> — <span class="${klass}">${svc.active ? "ACTIVE" : "INACTIVE"}</span> <span class="small">(${escapeHtml(svc.state ?? "")})</span></div>
+
+          <div class="btnrow">
+            <button onclick="svcAction('${escapeJs(unit)}','start')" ${svc.active ? "disabled" : ""}>Start</button>
+            <button onclick="svcAction('${escapeJs(unit)}','stop')" ${svc.active ? "" : "disabled"}>Stop</button>
+            <button onclick="svcAction('${escapeJs(unit)}','restart')">Restart</button>
+            <span class="small result" id="result-${rid}"></span>
+          </div>
+
+          ${svc.tail ? `<pre>${escapeHtml(svc.tail)}</pre>` : ``}
+        </div>
+      `);
+    }
+
+    document.getElementById("services").innerHTML = blocks.join("");
+
+    // Internet status
+    const net = d.internet || null;
+    const internetDiv = document.getElementById("internet");
+    if (!net) {
+      internetDiv.innerHTML = `<span class="bad">No internet status available</span>`;
+    } else {
+      const klass = net.ok ? "ok" : "bad";
+      const lat = (net.latency_ms != null) ? `${Number(net.latency_ms).toFixed(1)} ms` : "—";
+      internetDiv.innerHTML = `
+        <table>
+          <tr><td>Status</td><td><span class="${klass}">${net.ok ? "INTERNET UP" : "INTERNET DOWN"}</span></td></tr>
+          <tr><td>Target</td><td>${escapeHtml(net.target ?? "—")}</td></tr>
+          <tr><td>Latency</td><td>${escapeHtml(lat)}</td></tr>
+          <tr><td>Detail</td><td class="small">${escapeHtml(net.detail ?? "")}</td></tr>
+        </table>
+      `;
+    }
+
+    // MQTT status fields
+    const mqtt = d.mqtt || {};
+    document.getElementById("topic").textContent = mqtt.subscribed_topic ?? "—";
+
+    const connEl = document.getElementById("mqttConnected");
+    if (mqtt.connected === true) connEl.innerHTML = `<span class="ok">YES</span>`;
+    else if (mqtt.connected === false) connEl.innerHTML = `<span class="bad">NO</span>`;
+    else connEl.textContent = "—";
+
+    document.getElementById("mqttLastConnect").textContent = mqtt.last_connect ?? "—";
+    document.getElementById("mqttLastSubscribe").textContent = mqtt.last_subscribe ?? "—";
+    document.getElementById("mqttLastError").textContent = mqtt.last_error ?? "—";
+
+    // MQTT last messages
+    const msgs = mqtt.last_messages || [];
+    if (msgs.length === 0) {
+      document.getElementById("mqtt").innerHTML = `<span class="small">No messages received yet.</span>`;
+    } else {
+      document.getElementById("mqtt").innerHTML = `
+        <table>
+          ${msgs.map(m => `
+            <tr>
+              <td style="width: 160px">${escapeHtml(m.ts)}</td>
+              <td style="width: 260px"><code>${escapeHtml(m.topic)}</code></td>
+              <td><pre>${escapeHtml(m.payload)}</pre></td>
+            </tr>
+          `).join("")}
+        </table>
+      `;
+    }
+
+  } catch (e) {
+    console.error("refresh() failed:", e);
+    document.getElementById("mqtt").innerHTML = `<span class="bad">UI error — check console</span>`;
+  }
+}
+
+async function svcAction(unit, action) {
+  const el = document.getElementById("result-" + escapeId(unit));
+  if (el) el.textContent = "Running…";
+
+  try {
+    const headers = {};
+    if (ADMIN_TOKEN) headers["X-Auth-Token"] = ADMIN_TOKEN;
+
+    const r = await fetch(`/api/service/${encodeURIComponent(unit)}/${encodeURIComponent(action)}`, {
+      method: "POST",
+      headers
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      if (el) el.textContent = "OK";
+    } else {
+      const msg = `FAILED (${r.status}) ${j.stderr || j.stdout || ""}`.slice(0, 160);
+      if (el) el.textContent = msg;
+    }
+  } catch (e) {
+    if (el) el.textContent = "ERROR " + (e?.message || e);
+  }
+
+  setTimeout(refresh, 900);
+}
+
+async function powerAction(action) {
+  const msg = (action === "reboot")
+    ? "Restart the Pi now?"
+    : "Shutdown the Pi now? (You will need to power-cycle to bring it back.)";
+
+  if (!confirm(msg)) return;
+
+  const el = document.getElementById("powerResult");
+  if (el) el.textContent = "Running…";
+
+  try {
+    const headers = {};
+    if (ADMIN_TOKEN) headers["X-Auth-Token"] = ADMIN_TOKEN;
+
+    const r = await fetch(`/api/power/${encodeURIComponent(action)}`, {
+      method: "POST",
+      headers
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      if (el) el.textContent = "OK";
+    } else {
+      const msg2 = `FAILED (${r.status}) ${j.stderr || j.stdout || ""}`.slice(0, 160);
+      if (el) el.textContent = msg2;
+    }
+  } catch (e) {
+    if (el) el.textContent = "ERROR " + (e?.message || e);
+  }
+}
+
+function escapeHtml(str) {
+  return (str ?? "").toString()
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+function escapeJs(s) {
+  return (s ?? "").toString().replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+}
+function escapeId(s) {
+  return (s ?? "").toString().replaceAll(" ", "_").replaceAll(".", "_").replaceAll("/", "_");
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

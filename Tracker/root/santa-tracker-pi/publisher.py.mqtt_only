@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+import time
+import gpsd
+import paho.mqtt.client as mqtt
+
+# ---- MQTT ----
+MQTT_HOST = "127.0.0.1"
+MQTT_PORT = 1883
+TOPIC = "sleigh/gps/speed_kph"
+
+# ---- TIMING ----
+INTERVAL_SECONDS = 1   # publish every second
+
+def main():
+    gpsd.connect()
+
+    client = mqtt.Client(client_id="sleigh-tracker")
+    client.connect(MQTT_HOST, MQTT_PORT, 60)
+    client.loop_start()
+
+    while True:
+        try:
+            packet = gpsd.get_current()
+
+            if packet.mode >= 2:
+                speed_mps = packet.hspeed or 0.0
+                speed_kph = speed_mps * 3.6
+
+                # IMPORTANT: publish ONLY a number
+                client.publish(
+                    TOPIC,
+                    f"{speed_kph:.2f}",
+                    qos=0,
+                    retain=True
+                )
+
+                print(f"Published speed_kph={speed_kph:.2f}")
+
+            else:
+                # No fix → treat as stopped
+                client.publish(TOPIC, "0", retain=True)
+
+        except Exception as e:
+            print(f"GPS error: {e}")
+
+        time.sleep(INTERVAL_SECONDS)
+
+if __name__ == "__main__":
+    main()

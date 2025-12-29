@@ -1,0 +1,9 @@
+# Minimal, known-good
+DEVICE_NAME="Santa Sleigh"
+BITRATE="320"
+BACKEND="hw:1,0"
+DEVICE_TYPE="speaker"
+OPTIONS="--disable-audio-cache"
+
+# Supervisor integration
+LIBRESPOT_ONEVENT="/opt/audio-hub/spotify_event.sh"
