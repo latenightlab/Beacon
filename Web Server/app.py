@@ -172,7 +172,7 @@ def index():
 <!-- ===== MAP SCRIPTS ===== -->
 <script src="/static/leaflet.js"></script>
 <script>
-  var map = L.map('map').setView([51.3779263, -3.1237549], 16);
+  var map = L.map('map').setView([79.435151, -44.0524069], 16);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19
@@ -185,7 +185,7 @@ def index():
   });
 
   var marker = L.marker(
-    [51.3779263, -3.1237549],
+    [79.435151, -44.0524069],
     { icon: santaIcon }
   ).addTo(map);
 
