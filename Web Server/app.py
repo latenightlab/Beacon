@@ -3,7 +3,10 @@ import time
 
 app = Flask(__name__)
 
+# Simple shared secret for location updates
 AUTH_TOKEN = "wefig24qoe9fnqunq08hnwf09dnxqp89r20hf93ndo"
+
+# Stores last known location in memory
 LAST_LOCATION = None
 
 
@@ -13,6 +16,7 @@ def update_location():
 
     data = request.get_json(silent=True) or {}
 
+    # Basic auth check
     if data.get("token") != AUTH_TOKEN:
         return jsonify({"error": "unauthorized"}), 401
 
@@ -55,12 +59,27 @@ def index():
   <meta charset="utf-8" />
   <title>Santa Tracker | Pontypridd & Rhondda Round Table</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/leaflet.css" />
-  <style>
-    html, body { height: 100%; margin: 0; padding: 0; }
-    #map { width: 100%; height: 100%; }
-    .leaflet-control-attribution { font-size: 10px; }
 
+  <!-- Leaflet map CSS -->
+  <link rel="stylesheet" href="/static/leaflet.css" />
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 10px;
+    }
+
+    /* ===== INFO BAR ===== */
     #info-bar {
       position: absolute;
       top: 10px;
@@ -68,37 +87,90 @@ def index():
       transform: translateX(-50%);
       background: rgba(0,0,0,0.6);
       color: #fff;
-      padding: 8px 12px;
-      border-radius: 8px;
+      padding: 10px 14px;
+      border-radius: 10px;
       font-family: system-ui, sans-serif;
       font-size: 14px;
       z-index: 1000;
       display: flex;
-      gap: 12px;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 280px;
+      text-align: center;
+    }
+
+    #info-top {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
       align-items: center;
     }
 
+    #info-links {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    #info-links a {
+      color: #ffffff;
+      text-decoration: none;
+      opacity: 0.85;
+    }
+
+    #info-links a:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+
+    /* ===== STATUS COLOURS ===== */
     .status-live { color: #1aa34a; font-weight: 800; }
     .status-stale { color: #e69500; font-weight: 800; }
     .status-offline { color: #cc0000; font-weight: 800; }
     .status-resting { color: #bbbbbb; font-weight: 800; }
+
+    /* ===== WATERMARK ===== */
+    #watermark {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      z-index: 1000;
+      opacity: 0.6;
+      width: 140px;
+      height: auto;
+      pointer-events: none; /* do not block map interaction */
+      user-select: none;
+    }
   </style>
 </head>
 <body>
 
 <div id="map"></div>
 
+<!-- ===== INFO BAR ===== -->
 <div id="info-bar">
-  <div>
-    <strong>Status:</strong>
-    <span id="live-status" class="status-resting">RESTING</span>
+  <div id="info-top">
+    <div>
+      <strong>Status:</strong>
+      <span id="live-status" class="status-resting">RESTING</span>
+    </div>
+    <div>
+      <strong>Last updated:</strong>
+      <span id="info-updated">No data yet</span>
+    </div>
   </div>
-  <div>
-    <strong>Last updated:</strong>
-    <span id="info-updated">No data yet</span>
+
+  <!-- ===== LINKS ROW ===== -->
+  <div id="info-links">
+    <a href="#" target="_blank" rel="noopener">Donate</a>
+    <a href="#" target="_blank" rel="noopener">Route</a>
+    <a href="#" target="_blank" rel="noopener">Facebook</a>
+    <a href="#" target="_blank" rel="noopener">Website</a>
   </div>
 </div>
 
+<!-- ===== MAP SCRIPTS ===== -->
 <script src="/static/leaflet.js"></script>
 <script>
   var map = L.map('map').setView([51.3779263, -3.1237549], 16);
@@ -113,7 +185,10 @@ def index():
     iconAnchor: [30, 30]
   });
 
-  var marker = L.marker([51.3779263, -3.1237549], { icon: santaIcon }).addTo(map);
+  var marker = L.marker(
+    [51.3779263, -3.1237549],
+    { icon: santaIcon }
+  ).addTo(map);
 
   var infoUpdated = document.getElementById('info-updated');
   var liveStatus = document.getElementById('live-status');
@@ -126,12 +201,14 @@ def index():
   async function refreshLocation() {
     try {
       const resp = await fetch('/api/location');
+
       if (!resp.ok) {
         setStatus('RESTING', 'status-resting');
         return;
       }
 
       const data = await resp.json();
+
       marker.setLatLng([data.lat, data.lon]);
       map.setView([data.lat, data.lon], 16);
 
@@ -139,6 +216,7 @@ def index():
       infoUpdated.textContent = ts.toLocaleTimeString();
 
       const age = (Date.now() - ts.getTime()) / 1000;
+
       if (age <= 60) setStatus('LIVE', 'status-live');
       else if (age <= 180) setStatus('AWAITING UPDATE', 'status-stale');
       else setStatus('OFFLINE', 'status-offline');
@@ -152,6 +230,9 @@ def index():
   setInterval(refreshLocation, 10000);
 </script>
 
+<!-- ===== WATERMARK IMAGE ===== -->
+<img id="watermark" src="/static/watermark.png" alt="">
+
 </body>
 </html>
 """
@@ -160,4 +241,3 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
-
