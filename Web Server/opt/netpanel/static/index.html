@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NetPanel</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif; }
+    body { margin: 0; background: #0b0f14; color: #e6edf3; }
+    header { padding: 14px 16px; border-bottom: 1px solid #1f2a37; background: #0b0f14; position: sticky; top: 0; }
+    h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: 0.2px; }
+    .sub { color: #9aa4af; font-size: 12px; margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .wrap { padding: 14px 16px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card { border: 1px solid #1f2a37; border-radius: 12px; padding: 12px; background: #0f1621; box-shadow: 0 6px 18px rgba(0,0,0,.22); }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .title { font-weight: 650; font-size: 14px; }
+    .pill { font-size: 12px; border: 1px solid #263243; border-radius: 999px; padding: 2px 8px; color: #c6d0db; }
+    .ok { border-color: #1f6f3a; color: #b8f7c9; }
+    .bad { border-color: #7a2c2c; color: #ffd0d0; }
+    .btn { border: 1px solid #263243; background: #0b1220; color: #e6edf3; border-radius: 10px; padding: 8px 10px; cursor: pointer; font-size: 12px; }
+    .btn:hover { filter: brightness(1.08); }
+    .btn.danger { border-color: #7a2c2c; }
+    .btn.warn { border-color: #7a5b2c; }
+    .btn.small { padding: 6px 8px; border-radius: 9px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #c6d0db; white-space: pre-wrap; }
+    .kv { display: grid; grid-template-columns: 150px 1fr; gap: 6px 10px; margin-top: 10px; font-size: 12px; color: #c6d0db; }
+    .muted { color: #9aa4af; }
+    .sep { height: 1px; background: #1f2a37; margin: 10px 0; }
+    input { background: #0b1220; border: 1px solid #263243; border-radius: 10px; padding: 8px 10px; color: #e6edf3; font-size: 12px; width: 100%; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>NetPanel</h1>
+    <div class="row" style="gap:8px;">
+      <button class="btn small" onclick="refreshNow()">Refresh</button>
+      <button class="btn small" onclick="toggleAuto()">Auto: <span id="autoState">ON</span></button>
+    </div>
+  </div>
+  <div class="sub">
+    <div>Server time: <span id="serverTime">-</span></div>
+    <div>Panel → Internet: <span id="panelInternet">-</span></div>
+    <div class="muted" id="controlHint"></div>
+  </div>
+  <div class="sep"></div>
+  <div class="row">
+    <div style="max-width:360px;">
+      <input id="adminToken" placeholder="Admin token (X-Auth-Token) — only needed for control buttons" />
+    </div>
+    <div class="muted" style="font-size:12px;">
+      Tip: If you run NetPanel only on LAN/ZeroTier, you can leave token empty and restrict by firewall.
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap" id="cards"></div>
+  <div class="wrap" id="bottom"></div>
+</main>
+
+<script>
+let AUTO = true;
+let timer = null;
+
+function pill(ok, textOk, textBad) {
+  const cls = ok ? "pill ok" : "pill bad";
+  const text = ok ? textOk : textBad;
+  return `<span class="${cls}">${escapeHtml(text)}</span>`;
+}
+function escapeHtml(s){ return (""+s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+function getToken() { return document.getElementById("adminToken").value.trim(); }
+
+async function apiGet(path){ const r = await fetch(path); return await r.json(); }
+async function apiPost(path, body){
+  const token = getToken();
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["X-Auth-Token"] = token;
+  const r = await fetch(path, { method:"POST", headers, body: JSON.stringify(body||{}) });
+  let data = null;
+  try { data = await r.json(); } catch(e) { data = { error: "non-json response" }; }
+  if (!r.ok) throw new Error(`${r.status}: ${JSON.stringify(data)}`);
+  return data;
+}
+
+function formatLatency(p) {
+  if (!p) return "-";
+  if (p.ok && (p.latency_ms === 0 || p.latency_ms)) return `${p.latency_ms.toFixed(1)} ms`;
+  if (p.ok) return "ok";
+  return "down";
+}
+
+function renderNodeCard(key, node) {
+  const agent = node.agent_status || {};
+  const agentOk = !!agent.ok;
+  const agentP = agentOk ? pill(true, "Agent OK", "Agent down") : pill(false, "Agent OK", "Agent down");
+  const pingOk = node.panel_ping && node.panel_ping.ok;
+  const pingP = pingOk ? pill(true, `Ping ${formatLatency(node.panel_ping)}`, "Ping down")
+                       : pill(false, `Ping ${formatLatency(node.panel_ping)}`, "Ping down");
+
+  let bodyHtml = "";
+
+  if (!agentOk) {
+    bodyHtml += `<div class="mono">${escapeHtml(agent.error || "No response")}</div>`;
+  } else {
+    const data = agent.data || {};
+    const internet = data.internet || {};
+    const internetP = internet.ok ? pill(true, `Internet ${formatLatency(internet)}`, "Internet down")
+                                  : pill(false, `Internet ${formatLatency(internet)}`, "Internet down");
+
+    bodyHtml += `
+      <div class="row" style="margin-top:8px; gap:8px;">
+        ${internetP}
+        <span class="pill">Target: ${escapeHtml(internet.target || "-")}</span>
+      </div>
+    `;
+
+    const services = data.services || {};
+    const rows = Object.keys(services).sort().map(unit => {
+      const svc = services[unit] || {};
+      const active = !!svc.active;
+      const tail = svc.tail || svc.status_tail || "";
+      return `
+        <div style="border:1px solid #1f2a37; border-radius:10px; padding:10px; margin-top:8px;">
+          <div class="row">
+            <div class="title">${escapeHtml(unit)}</div>
+            ${pill(active, "active", "inactive")}
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button class="btn small" onclick="svcAction('${key}','${encodeURIComponent(unit)}','start')">Start</button>
+            <button class="btn small warn" onclick="svcAction('${key}','${encodeURIComponent(unit)}','restart')">Restart</button>
+            <button class="btn small danger" onclick="svcAction('${key}','${encodeURIComponent(unit)}','stop')">Stop</button>
+          </div>
+          ${tail ? `<div class="mono" style="margin-top:8px;">${escapeHtml(tail)}</div>` : ``}
+        </div>
+      `;
+    }).join("");
+    bodyHtml += `<div class="sep"></div><div class="title">Services</div>${rows || `<div class="muted">No services reported.</div>`}`;
+
+    if (data.gps && data.gps.has_gpsd !== undefined) {
+      const g = data.gps;
+      bodyHtml += `
+        <div class="sep"></div>
+        <div class="title">GPS</div>
+        <div class="kv">
+          <div class="muted">gpsd</div><div>${pill(!!g.has_gpsd, "present", "missing")}</div>
+          <div class="muted">fix</div><div>${escapeHtml((g.mode || g.fix || "-") + "")}</div>
+          <div class="muted">lat</div><div>${escapeHtml((g.lat ?? "-") + "")}</div>
+          <div class="muted">lon</div><div>${escapeHtml((g.lon ?? "-") + "")}</div>
+          <div class="muted">sats</div><div>${escapeHtml((g.sats ?? "-") + "")}</div>
+        </div>
+      `;
+    }
+
+    if (key === "webserver" && data.map_updates) {
+      const u = data.map_updates;
+      const enabled = u.updates_enabled;
+      bodyHtml += `
+        <div class="sep"></div>
+        <div class="title">Map location updates</div>
+        <div class="row" style="margin-top:8px;">
+          ${enabled === true ? pill(true, "Enabled", "Disabled") : (enabled === false ? pill(false,"Enabled","Disabled") : `<span class="pill">Unknown</span>`)}
+          <div class="row" style="gap:8px;">
+            <button class="btn small" onclick="setUpdates(true)">Enable</button>
+            <button class="btn small danger" onclick="setUpdates(false)">Disable</button>
+          </div>
+        </div>
+        ${u.error ? `<div class="mono" style="margin-top:8px;">${escapeHtml(u.error)}</div>` : ``}
+      `;
+    }
+  }
+
+  return `
+    <section class="card">
+      <div class="row">
+        <div class="title">${escapeHtml(node.name)} <span class="muted">(${escapeHtml(node.base_url)})</span></div>
+        <div class="row" style="gap:8px;">
+          ${pingP}
+          ${agentP}
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn small warn" onclick="powerAction('${key}','reboot')">Reboot</button>
+        <button class="btn small danger" onclick="powerAction('${key}','shutdown')">Shutdown</button>
+      </div>
+      ${bodyHtml}
+    </section>
+  `;
+}
+
+async function svcAction(nodeKey, unitEnc, action){
+  try {
+    const unit = decodeURIComponent(unitEnc);
+    const data = await apiPost(`/api/node/${nodeKey}/service/${encodeURIComponent(unit)}/${action}`, {});
+    alert(`OK: ${JSON.stringify(data.body)}`);
+    refreshNow();
+  } catch(e) {
+    alert(`Failed: ${e.message}`);
+  }
+}
+
+async function powerAction(nodeKey, action){
+  if (!confirm(`Really ${action} ${nodeKey}?`)) return;
+  try {
+    const data = await apiPost(`/api/node/${nodeKey}/power/${action}`, {});
+    alert(`Sent: ${JSON.stringify(data.body)}`);
+  } catch(e) {
+    alert(`Failed: ${e.message}`);
+  }
+}
+
+async function setUpdates(enabled){
+  try {
+    const data = await apiPost(`/api/webserver/map-updates`, { enabled });
+    alert(`OK: ${JSON.stringify(data.body)}`);
+    refreshNow();
+  } catch(e) {
+    alert(`Failed: ${e.message}`);
+  }
+}
+
+async function refreshNow(){
+  const cfg = await apiGet("/api/config");
+  document.getElementById("controlHint").textContent =
+    cfg.control_requires_token ? "Control actions require a token." : "Control actions allowed only from localhost unless you set ADMIN_TOKEN.";
+
+  const s = await apiGet("/api/summary");
+  document.getElementById("serverTime").textContent = s.server_time || "-";
+  document.getElementById("panelInternet").textContent = (s.panel_to_internet && s.panel_to_internet.ok)
+    ? `ok (${formatLatency(s.panel_to_internet)})` : "down";
+
+  const cards = Object.keys(s.nodes || {}).map(k => renderNodeCard(k, s.nodes[k])).join("");
+  document.getElementById("cards").innerHTML = cards;
+  document.getElementById("bottom").innerHTML = renderTrackerTelemetry(s.nodes && s.nodes.tracker);
+}
+
+function toggleAuto(){
+  AUTO = !AUTO;
+  document.getElementById("autoState").textContent = AUTO ? "ON" : "OFF";
+  if (AUTO) startAuto(); else stopAuto();
+}
+function startAuto(){ stopAuto(); timer = setInterval(() => refreshNow().catch(()=>{}), 2000); }
+function stopAuto(){ if (timer) { clearInterval(timer); timer = null; } }
+
+function renderTrackerTelemetry(trackerNode) {
+  // trackerNode is s.nodes.tracker from /api/summary
+  if (!trackerNode) {
+    return `<section class="card"><div class="title">Tracker telemetry</div><div class="muted">No tracker node data.</div></section>`;
+  }
+
+  const agent = trackerNode.agent_status || {};
+  if (!agent.ok) {
+    return `
+      <section class="card">
+        <div class="title">Tracker telemetry</div>
+        <div class="muted">Agent down</div>
+        <div class="mono">${escapeHtml(agent.error || "No response")}</div>
+      </section>
+    `;
+  }
+
+  const data = agent.data || {};
+  const gps = data.gps || null;
+
+  // MQTT can be named differently depending on your tracker agent:
+  // try a few common shapes safely.
+  const mqtt =
+    data.mqtt_messages ||
+    data.mqtt ||
+    data.mqtt_status ||
+    null;
+
+  // GPS block
+  let gpsHtml = `<div class="muted">No GPS info found in tracker payload.</div>`;
+  if (gps) {
+    gpsHtml = `
+      <div class="kv">
+        <div class="muted">gpsd</div><div>${pill(!!gps.has_gpsd, "present", "missing")}</div>
+        <div class="muted">fix</div><div>${escapeHtml((gps.mode || gps.fix || "-") + "")}</div>
+        <div class="muted">lat</div><div>${escapeHtml((gps.lat ?? "-") + "")}</div>
+        <div class="muted">lon</div><div>${escapeHtml((gps.lon ?? "-") + "")}</div>
+        <div class="muted">sats</div><div>${escapeHtml((gps.sats ?? "-") + "")}</div>
+      </div>
+    `;
+  }
+
+  // MQTT block (render as JSON, because we don’t know your exact structure yet)
+  let mqttHtml = `<div class="muted">No MQTT messages found in tracker payload.</div>`;
+  if (mqtt) {
+    mqttHtml = `<div class="mono">${escapeHtml(JSON.stringify(mqtt, null, 2))}</div>`;
+  }
+
+  return `
+    <section class="card">
+      <div class="row">
+        <div class="title">Tracker telemetry</div>
+        <span class="pill">Source: ${escapeHtml(trackerNode.base_url || "tracker")}</span>
+      </div>
+
+      <div class="sep"></div>
+      <div class="title">GPS fix</div>
+      ${gpsHtml}
+
+      <div class="sep"></div>
+      <div class="title">MQTT</div>
+      ${mqttHtml}
+    </section>
+  `;
+}
+
+refreshNow().then(startAuto);
+</script>
+</body>
+</html>

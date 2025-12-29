@@ -1,0 +1,31 @@
+[Unit]
+Description=Sleigh GPS Publisher (u-blox UBX -> MQTT + HTTP)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/santa-tracker-pi/
+
+# Make sure Python output appears in journalctl immediately
+Environment=PYTHONUNBUFFERED=1
+
+# Optional: uncomment if you want to override config via env vars
+# Environment=MQTT_HOST=127.0.0.1
+# Environment=MQTT_PORT=1883
+# Environment=GPS_DEV=/dev/ttyACM0
+
+ExecStart=/usr/bin/python3 /root/santa-tracker-pi/publisher.py
+
+Restart=on-failure
+RestartSec=3
+
+# Hardening (safe defaults)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

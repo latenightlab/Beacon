@@ -1,0 +1,20 @@
+[Unit]
+Description=Adjust audio volume based on GPS speed (MQTT)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+WorkingDirectory=/home/brady
+
+# --- SERVICE START DELAY ---
+ExecStartPre=/bin/sleep 15
+ExecStart=/home/brady/santa-audio/venv/bin/python -u /home/brady/santa-audio/speed_volume_alsa.py
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=2
+
+
+[Install]
+WantedBy=multi-user.target
+

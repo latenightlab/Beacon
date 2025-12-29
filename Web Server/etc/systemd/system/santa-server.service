@@ -1,0 +1,16 @@
+[Unit]
+Description=Santa Tracker Web Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+WorkingDirectory=/root/santa-tracker-server
+ExecStart=/root/santa-tracker-server/venv/bin/python /root/santa-tracker-server/app.py
+Restart=always
+RestartSec=5
+Environment="ADMIN_TOKEN=SECRET_TOKEN"
+
+[Install]
+WantedBy=multi-user.target
+

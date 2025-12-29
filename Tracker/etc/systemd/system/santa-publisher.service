@@ -1,0 +1,14 @@
+[Unit]
+Description=Santa Tracker GPS Publisher
+After=network-online.target gpsd.service
+Wants=network-online.target
+
+[Service]
+User=root
+WorkingDirectory=/root/santa-tracker-pi
+ExecStart=/root/santa-tracker-pi/venv/bin/python /root/santa-tracker-pi/publisher.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

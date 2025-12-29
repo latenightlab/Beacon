@@ -1,0 +1,12 @@
+[Unit]
+Description=Force ALSA mixer volume at boot
+After=multi-user.target sound.target
+Wants=sound.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'sleep 10; /usr/local/sbin/force-alsa-volume.sh'
+
+[Install]
+WantedBy=multi-user.target
+

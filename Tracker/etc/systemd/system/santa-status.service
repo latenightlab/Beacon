@@ -1,0 +1,26 @@
+[Unit]
+Description=Santa Status Web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/santa-status/app.py
+WorkingDirectory=/opt/santa-status
+Restart=always
+RestartSec=2
+
+# Optional: override these if your unit names differ
+Environment=GPSD_UNIT=gpsd.service
+Environment=MQTT_BROKER_UNIT=mosquitto.service
+Environment=PUBLISHER_UNIT=santa-publisher.service
+Environment=MQTT_HOST=127.0.0.1
+Environment=MQTT_PORT=1883
+Environment=MQTT_TOPIC=sleigh/gps/#
+Environment=ADMIN_TOKEN=SECRET_TOKEN
+
+# Environment file with auth token and ping check
+EnvironmentFile=/etc/santa-status.env
+
+[Install]
+WantedBy=multi-user.target

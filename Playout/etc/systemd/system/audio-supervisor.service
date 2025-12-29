@@ -1,0 +1,15 @@
+[Unit]
+Description=Audio Fallback Supervisor (Mopidy)
+After=network.target mopidy.service
+Requires=mopidy.service
+
+[Service]
+Type=simple
+User=brady
+WorkingDirectory=/opt/audio-hub
+ExecStart=/usr/bin/python3 /opt/audio-hub/audio_supervisor.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

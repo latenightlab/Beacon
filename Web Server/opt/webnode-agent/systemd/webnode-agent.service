@@ -1,0 +1,16 @@
+[Unit]
+Description=Webnode Agent - status/control for santa-server + cloudflared
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/webnode-agent
+EnvironmentFile=/etc/webnode-agent.env
+ExecStart=/opt/webnode-agent/venv/bin/python /opt/webnode-agent/webnode_agent.py
+Restart=on-failure
+RestartSec=2
+User=root
+
+[Install]
+WantedBy=multi-user.target

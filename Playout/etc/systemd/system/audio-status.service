@@ -1,0 +1,34 @@
+[Unit]
+Description=Audio Playout Status Web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/audio-status/app.py
+WorkingDirectory=/opt/audio-status
+Restart=always
+RestartSec=2
+
+# If your MQTT broker is remote, set it here:
+# Environment=MQTT_HOST=10.0.0.50
+Environment=MQTT_HOST=192.168.8.10
+Environment=MQTT_PORT=1883
+
+# Pick the exact topic your speed-volume script listens to / receives from:
+Environment=MQTT_TOPIC=sleigh/gps/#
+
+# Override unit names if yours differ:
+Environment=MOPIDY_UNIT=mopidy.service
+Environment=SUPERVISOR_UNIT=audio-supervisor.service
+Environment=RASPOTIFY_UNIT=raspotify.service
+Environment=SPEEDVOL_UNIT=speed-volume.service
+Environment=ADMIN_TOKEN=SECRET_TOKEN
+
+# Environment file with auth token and ping target
+EnvironmentFile=/etc/audio-status.env
+# Keep exactly 5 messages
+Environment=MAX_MESSAGES=5
+
+[Install]
+WantedBy=multi-user.target

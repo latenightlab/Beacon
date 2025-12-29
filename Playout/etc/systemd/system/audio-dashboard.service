@@ -1,0 +1,13 @@
+[Unit]
+Description=Audio Hub Web Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/audio-hub
+ExecStart=/opt/audio-hub/venv/bin/python /opt/audio-hub/dashboard.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
