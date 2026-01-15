@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+import glob
+import queue
+import subprocess
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
+import serial
+from flask import Flask, jsonify, request, send_from_directory
+
+# Optional Socket.IO
+SOCKETIO_OK = True
+try:
+    from flask_socketio import SocketIO, emit
+except Exception:
+    SOCKETIO_OK = False
+    SocketIO = None
+    emit = None
+
+# -----------------------------
+# Config
+# -----------------------------
+HTTP_BIND = "0.0.0.0"
+HTTP_PORT = 8081
+
+# If empty, auto-discover /dev/ttyACM*
+# If you create udev symlinks, set: ["/dev/pico-panel-1", "/dev/pico-panel-2"]
+SERIAL_PORTS: List[str] = []
+
+SERIAL_BAUD = 115200
+SERIAL_TIMEOUT = 0.1
+PICO_RECONNECT_INTERVAL_S = 2.0
+PICO_PING_INTERVAL_S = 1.0
+
+# -----------------------------
+# ALSA helpers
+# -----------------------------
+def amixer_change_master(delta_percent: int):
+    sign = "+" if delta_percent >= 0 else "-"
+    amt = abs(int(delta_percent))
+    subprocess.run(["amixer", "-q", "set", "Master", f"{amt}%{sign}"], check=False)
+
+def amixer_toggle_mute():
+    subprocess.run(["amixer", "-q", "set", "Master", "toggle"], check=False)
+
+# -----------------------------
+# Relay stub (replace later)
+# -----------------------------
+class RelayController:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._state: Dict[int, bool] = {}
+
+    def toggle(self, rid: int) -> bool:
+        with self._lock:
+            new = not self._state.get(rid, False)
+            self._state[rid] = new
+        print(f"[relay] {rid} => {'ON' if new else 'OFF'}")
+        return new
+
+    def all_off(self):
+        with self._lock:
+            self._state = {}
+        print("[relay] ALL OFF")
+
+# -----------------------------
+# State
+# -----------------------------
+@dataclass
+class LedState:
+    mode: str = "OFF"  # OFF | SOLID | FLASH
+    rgb: Tuple[int, int, int] = (0, 0, 0)
+
+@dataclass
+class SystemState:
+    leds: Dict[int, LedState] = field(default_factory=lambda: {i: LedState() for i in range(4)})
+    relay_a: bool = False
+    relay_b: bool = False
+    muted: bool = False
+
+    def to_dict(self):
+        return {
+            "leds": {
+                str(i): {"mode": self.leds[i].mode, "rgb": list(self.leds[i].rgb)}
+                for i in self.leds
+            },
+            "relay_a": self.relay_a,
+            "relay_b": self.relay_b,
+            "muted": self.muted,
+        }
+
+# -----------------------------
+# Pico serial client
+# -----------------------------
+class PicoClient(threading.Thread):
+    def __init__(self, port: str, event_q: queue.Queue):
+        super().__init__(daemon=True)
+        self.port = port
+        self.event_q = event_q
+        self.ser: Optional[serial.Serial] = None
+        self.connected = False
+        self.last_rx = 0.0
+        self.last_connect_attempt = 0.0
+        self._tx_lock = threading.Lock()
+
+    def info(self) -> dict:
+        now = time.time()
+        age = None
+        if self.last_rx > 0:
+            age = round(now - self.last_rx, 2)
+        return {
+            "port": self.port,
+            "connected": bool(self.connected),
+            "last_rx_age_s": age,
+        }
+
+    def send(self, line: str):
+        with self._tx_lock:
+            if self.ser and self.ser.is_open:
+                try:
+                    self.ser.write((line.strip() + "\n").encode("utf-8"))
+                    self.ser.flush()
+                except Exception:
+                    pass
+
+    def connect(self):
+        self.last_connect_attempt = time.time()
+        try:
+            self.ser = serial.Serial(self.port, SERIAL_BAUD, timeout=SERIAL_TIMEOUT)
+            self.connected = True
+            self.last_rx = time.time()
+            print(f"[pico] Connected {self.port}")
+            self.send("HELLO")
+        except Exception as e:
+            print(f"[pico] Failed {self.port}: {e}")
+            self.connected = False
+
+    def run(self):
+        while True:
+            if not self.connected:
+                self.connect()
+                time.sleep(PICO_RECONNECT_INTERVAL_S)
+                continue
+
+            try:
+                line = self.ser.readline().decode("utf-8", errors="ignore").strip()
+                if line:
+                    self.last_rx = time.time()
+                    self.event_q.put({"type": "pico_line", "port": self.port, "line": line})
+            except Exception:
+                self.connected = False
+
+            # Ping if quiet
+            if time.time() - self.last_rx > PICO_PING_INTERVAL_S:
+                self.send("PING")
+
+# -----------------------------
+# Hub
+# -----------------------------
+class Hub:
+    def __init__(self, socketio_obj=None):
+        self.socketio = socketio_obj
+        self.state = SystemState()
+        self.state_lock = threading.Lock()
+        self.event_q: queue.Queue = queue.Queue()
+        self.picos: Dict[str, PicoClient] = {}
+        self.relay = RelayController()
+
+    def discover_ports(self) -> List[str]:
+        if SERIAL_PORTS:
+            return list(SERIAL_PORTS)
+        ports = sorted(glob.glob("/dev/ttyACM*")) + sorted(glob.glob("/dev/pico-panel-*"))
+        # de-dup
+        seen, out = set(), []
+        for p in ports:
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+        return out
+
+    def ensure_picos(self):
+        ports = self.discover_ports()
+        for port in ports:
+            if port not in self.picos:
+                pc = PicoClient(port, self.event_q)
+                self.picos[port] = pc
+                pc.start()
+
+    def pico_summary(self) -> dict:
+        ports = self.discover_ports()
+        total = len(ports)
+        connected = 0
+        details = []
+
+        # Ensure we include ports even if thread not started yet
+        for p in ports:
+            c = self.picos.get(p)
+            if c is None:
+                details.append({"port": p, "connected": False, "last_rx_age_s": None})
+            else:
+                d = c.info()
+                details.append(d)
+                if d["connected"]:
+                    connected += 1
+
+        return {
+            "total": total,
+            "connected": connected,
+            "details": details,
+        }
+
+    def broadcast_state_to_picos(self):
+        for i, led in self.state.leds.items():
+            if led.mode == "OFF":
+                cmd = f"OFF {i}"
+            elif led.mode == "SOLID":
+                r, g, b = led.rgb
+                cmd = f"RGB {i} {r} {g} {b}"
+            else:
+                r, g, b = led.rgb
+                cmd = f"FLASH {i} {r} {g} {b}"
+
+            for p in self.picos.values():
+                if p.connected:
+                    p.send(cmd)
+
+    def broadcast_state_to_web(self):
+        if self.socketio is not None:
+            self.socketio.emit("state", self.state.to_dict())
+            self.socketio.emit("picos", self.pico_summary())
+
+    def broadcast_state(self):
+        self.broadcast_state_to_picos()
+        self.broadcast_state_to_web()
+
+    def handle_button_event(self, source: str, btn: int, kind: str):
+        kind = kind.upper()
+        print(f"[evt] {source} btn={btn} {kind}")
+
+        with self.state_lock:
+            if btn == 0 and kind == "SINGLE":
+                self.state.relay_a = self.relay.toggle(0)
+                self.state.leds[0].mode = "SOLID" if self.state.relay_a else "OFF"
+                self.state.leds[0].rgb = (0, 255, 0)
+
+            elif btn == 1 and kind == "SINGLE":
+                self.state.relay_b = self.relay.toggle(1)
+                self.state.leds[1].mode = "SOLID" if self.state.relay_b else "OFF"
+                self.state.leds[1].rgb = (0, 255, 0)
+
+            elif btn == 2:
+                if kind == "SINGLE":
+                    amixer_change_master(-5)
+                    self.state.leds[2].mode = "FLASH"
+                    self.state.leds[2].rgb = (0, 120, 255)
+                elif kind == "DOUBLE":
+                    amixer_change_master(+5)
+                    self.state.leds[2].mode = "FLASH"
+                    self.state.leds[2].rgb = (0, 120, 255)
+                elif kind == "LONG":
+                    amixer_toggle_mute()
+                    self.state.muted = not self.state.muted
+                    self.state.leds[2].mode = "SOLID" if self.state.muted else "OFF"
+                    self.state.leds[2].rgb = (255, 80, 0)
+
+            elif btn == 3 and kind == "LONG":
+                self.relay.all_off()
+                self.state.relay_a = False
+                self.state.relay_b = False
+                self.state.muted = False
+                for i in range(4):
+                    self.state.leds[i] = LedState()
+
+        self.broadcast_state()
+
+    def process_pico_line(self, port: str, line: str):
+        parts = line.strip().split()
+        if not parts:
+            return
+
+        if parts[0] == "EVT" and len(parts) == 3:
+            try:
+                btn = int(parts[1])
+                kind = parts[2].upper()
+                if btn in (0, 1, 2, 3) and kind in ("SINGLE", "DOUBLE", "LONG"):
+                    self.handle_button_event(f"pico:{port}", btn, kind)
+            except Exception:
+                return
+
+        elif parts[0] == "HELLO_ACK":
+            print(f"[pico] HELLO_ACK from {port} -> syncing state")
+            self.broadcast_state()
+
+    def run_forever(self):
+        def discover_loop():
+            while True:
+                self.ensure_picos()
+                # periodically push pico summary to web (even if no events)
+                if self.socketio is not None:
+                    self.socketio.emit("picos", self.pico_summary())
+                time.sleep(2.0)
+
+        threading.Thread(target=discover_loop, daemon=True).start()
+
+        # Initial push
+        self.broadcast_state()
+
+        while True:
+            evt = self.event_q.get()
+            if evt.get("type") == "pico_line":
+                self.process_pico_line(evt["port"], evt["line"])
+
+# -----------------------------
+# Flask App
+# -----------------------------
+app = Flask(__name__, static_folder="static", static_url_path="/static")
+
+socketio = None
+if SOCKETIO_OK:
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+
+hub = Hub(socketio_obj=socketio)
+
+@app.get("/")
+def index():
+    return send_from_directory("static", "index.html")
+
+@app.get("/api/state")
+def api_state():
+    return jsonify(hub.state.to_dict())
+
+@app.get("/api/picos")
+def api_picos():
+    return jsonify(hub.pico_summary())
+
+@app.post("/api/evt")
+def api_evt():
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        btn = int(data.get("btn"))
+        kind = str(data.get("kind", "")).upper()
+        if btn in (0, 1, 2, 3) and kind in ("SINGLE", "DOUBLE", "LONG"):
+            hub.handle_button_event("web", btn, kind)
+            return jsonify({"ok": True})
+    except Exception:
+        pass
+    return jsonify({"ok": False}), 400
+
+if socketio is not None:
+    @socketio.on("connect")
+    def on_connect():
+        emit("state", hub.state.to_dict())
+        emit("picos", hub.pico_summary())
+
+    @socketio.on("web_evt")
+    def on_web_evt(data):
+        try:
+            btn = int(data.get("btn"))
+            kind = str(data.get("kind", "")).upper()
+            if btn in (0, 1, 2, 3) and kind in ("SINGLE", "DOUBLE", "LONG"):
+                hub.handle_button_event("web", btn, kind)
+        except Exception:
+            return
+
+def main():
+    threading.Thread(target=hub.run_forever, daemon=True).start()
+    print(f"[web] Listening on http://{HTTP_BIND}:{HTTP_PORT}")
+
+    if socketio is not None:
+        socketio.run(app, host=HTTP_BIND, port=HTTP_PORT)
+    else:
+        app.run(host=HTTP_BIND, port=HTTP_PORT, threaded=True)
+
+if __name__ == "__main__":
+    main()

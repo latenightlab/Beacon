@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sleigh Control Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background: #0b0d10;
+      color: #e6e6e6;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 18px; }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; gap: 12px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 40px; letter-spacing: -0.5px; }
+    .sub { opacity: .75; margin-top: 6px; }
+
+    .statusbar { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
+    .pill {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid #263244;
+      background: #0f141b;
+      font-size: 13px;
+      opacity: .9;
+    }
+
+    .card {
+      margin-top: 16px;
+      background:#11151b;
+      border:1px solid #1c2430;
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    .grid {
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .btn {
+      user-select: none;
+      cursor: pointer;
+      border-radius: 18px;
+      border: 1px solid #263244;
+      background: linear-gradient(180deg, #101722, #0d121a);
+      padding: 18px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap: 14px;
+      transition: transform .05s ease;
+    }
+    .btn:active { transform: scale(0.99); }
+
+    .left .name { font-size: 18px; font-weight: 750; }
+    .left .hint { font-size: 12px; opacity: .75; margin-top: 5px; }
+
+    .right { display:flex; align-items:center; gap: 10px; }
+    .led {
+      width: 18px; height: 18px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.18);
+      box-shadow: 0 0 18px rgba(255,255,255,0.08);
+      background: rgb(0,0,0);
+    }
+    .mode {
+      font-size: 12px;
+      opacity: .85;
+      min-width: 70px;
+      text-align: right;
+    }
+
+    .flash { animation: flash .5s linear infinite; }
+    @keyframes flash { 50% { opacity: 0.18; } }
+
+    .warn {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #ffcc66;
+      opacity: .9;
+      display:none;
+    }
+
+    details {
+      margin-top: 10px;
+      border: 1px solid #1c2430;
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #0f141b;
+    }
+    summary { cursor: pointer; font-size: 13px; opacity: .9; }
+    .picolist { margin-top: 10px; font-size: 13px; opacity: .9; }
+    .picoline { display:flex; justify-content:space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid #1c2430; }
+    .picoline:last-child { border-bottom: none; }
+    .ok { color: #6ee7b7; }
+    .bad { color: #fca5a5; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1>Web Mirror Panel</h1>
+        <div class="sub">Picos + LEDs + actions</div>
+      </div>
+      <div class="statusbar">
+        <div class="pill" id="picosPill">Picos: ?/?</div>
+        <div class="pill" id="relay0">Relay 0: ?</div>
+        <div class="pill" id="relay1">Relay 1: ?</div>
+        <div class="pill" id="publisher">Publisher: ?</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="opacity:.85; font-size:13px;">Controls</div>
+
+      <div class="grid">
+        <div class="btn" data-btn="0">
+          <div class="left">
+            <div class="name">Button 0</div>
+            <div class="hint">Relay 0: SINGLE=ON • LONG=OFF</div>
+          </div>
+          <div class="right">
+            <div class="led" id="led-0"></div>
+            <div class="mode" id="mode-0">OFF</div>
+          </div>
+        </div>
+
+        <div class="btn" data-btn="1">
+          <div class="left">
+            <div class="name">Button 1</div>
+            <div class="hint">Relay 1: SINGLE=ON • LONG=OFF</div>
+          </div>
+          <div class="right">
+            <div class="led" id="led-1"></div>
+            <div class="mode" id="mode-1">OFF</div>
+          </div>
+        </div>
+
+        <div class="btn" data-btn="2">
+          <div class="left">
+            <div class="name">Button 2</div>
+            <div class="hint">Digital: SINGLE=60% • LONG=100%</div>
+          </div>
+          <div class="right">
+            <div class="led" id="led-2"></div>
+            <div class="mode" id="mode-2">OFF</div>
+          </div>
+        </div>
+
+        <div class="btn" data-btn="3">
+          <div class="left">
+            <div class="name">Button 3</div>
+            <div class="hint">Publisher: SINGLE=RESTART • LONG=STOP</div>
+          </div>
+          <div class="right">
+            <div class="led" id="led-3"></div>
+            <div class="mode" id="mode-3">OFF</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="warn" id="warn">WebSocket not available; using REST + polling.</div>
+
+      <details>
+        <summary>Pico details</summary>
+        <div class="picolist" id="picolist"></div>
+      </details>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    function setLed(i, mode, rgb){
+      const led = document.getElementById("led-"+i);
+      const lbl = document.getElementById("mode-"+i);
+
+      led.classList.remove("flash");
+      lbl.classList.remove("flash");
+
+      const [r,g,b] = rgb || [0,0,0];
+      led.style.background = `rgb(${r},${g},${b})`;
+      lbl.textContent = mode;
+
+      if (mode === "FLASH") {
+        led.classList.add("flash");
+        lbl.classList.add("flash");
+      }
+      if (mode === "OFF") {
+        led.style.background = "rgb(0,0,0)";
+      }
+    }
+
+    function applyState(st){
+      for (const k in st.leds){
+        const i = parseInt(k, 10);
+        setLed(i, st.leds[k].mode, st.leds[k].rgb);
+      }
+      document.getElementById("relay0").textContent = "Relay 0: " + (st.relay0 ? "ON" : "OFF");
+      document.getElementById("relay1").textContent = "Relay 1: " + (st.relay1 ? "ON" : "OFF");
+      document.getElementById("publisher").textContent = "Publisher: " + (st.publisher_active ? "ACTIVE" : "STOPPED");
+    }
+
+    function applyPicos(p){
+      document.getElementById("picosPill").textContent = `Picos: ${p.connected}/${p.total}`;
+      const list = document.getElementById("picolist");
+      list.innerHTML = "";
+      (p.details || []).forEach(d => {
+        const status = d.connected ? "<span class='ok'>CONNECTED</span>" : "<span class='bad'>DOWN</span>";
+        const age = (d.last_rx_age_s === null || d.last_rx_age_s === undefined) ? "-" : `${d.last_rx_age_s}s`;
+        const line = document.createElement("div");
+        line.className = "picoline";
+        line.innerHTML = `<div class="mono">${d.port}</div><div>${status} • rx age: ${age}</div>`;
+        list.appendChild(line);
+      });
+    }
+
+    async function postEvt(btn, kind){
+      await fetch("/api/evt", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({btn, kind})
+      });
+    }
+
+    async function pollAll(){
+      try { applyState(await (await fetch("/api/state")).json()); } catch(e){}
+      try { applyPicos(await (await fetch("/api/picos")).json()); } catch(e){}
+    }
+
+    // WebSocket if possible
+    let ws_ok = (typeof io !== "undefined");
+    if (ws_ok){
+      const socket = io();
+      socket.on("state", (st) => applyState(st));
+      socket.on("picos", (p) => applyPicos(p));
+      socket.on("connect_error", () => {
+        ws_ok = false;
+        document.getElementById("warn").style.display = "block";
+      });
+      window.sendEvt = (btn, kind) => socket.emit("web_evt", {btn, kind});
+    } else {
+      document.getElementById("warn").style.display = "block";
+      window.sendEvt = postEvt;
+    }
+
+    // Always poll as fallback
+    setInterval(pollAll, 1000);
+    pollAll();
+
+    // SINGLE / LONG only
+    document.querySelectorAll(".btn").forEach(el => {
+      const btn = parseInt(el.getAttribute("data-btn"), 10);
+
+      let longTimer = null;
+      let longFired = false;
+
+      function startPress(e){
+        e.preventDefault();
+        longFired = false;
+        longTimer = setTimeout(() => {
+          longFired = true;
+          window.sendEvt(btn, "LONG");
+        }, 700);
+      }
+
+      function endPress(e){
+        e.preventDefault();
+        if (longTimer) clearTimeout(longTimer);
+        if (!longFired) window.sendEvt(btn, "SINGLE");
+      }
+
+      el.addEventListener("mousedown", startPress);
+      el.addEventListener("mouseup", endPress);
+      el.addEventListener("mouseleave", () => { if (longTimer) clearTimeout(longTimer); });
+
+      el.addEventListener("touchstart", startPress, {passive:false});
+      el.addEventListener("touchend", endPress, {passive:false});
+    });
+  </script>
+</body>
+</html>
