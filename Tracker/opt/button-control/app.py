@@ -26,7 +26,6 @@ HTTP_BIND = "0.0.0.0"
 HTTP_PORT = 8080
 
 # If empty, auto-discover /dev/ttyACM*
-# If you create udev symlinks, set: ["/dev/pico-panel-1", "/dev/pico-panel-2"]
 SERIAL_PORTS: List[str] = []
 
 SERIAL_BAUD = 115200
@@ -34,10 +33,24 @@ SERIAL_TIMEOUT = 0.1
 PICO_RECONNECT_INTERVAL_S = 2.0
 PICO_PING_INTERVAL_S = 1.0
 
-# Relay hat (I2C expander style) - not used for relays 0/1 in this raw-i2cset build
-I2C_BUS = 1
-I2C_ADDR = 0x20
-RELAY_ACTIVE_LOW = True
+# I2C raw commands (your relay/controller device)
+RAW_I2C_BUS = 1
+RAW_I2C_ADDR = 0x10
+
+# Button 0 commands (as requested)
+BTN0_REG = 0x01
+BTN0_ON  = 0xFF
+BTN0_OFF = 0x00
+
+# Button 1 commands (you can change REG if needed)
+BTN1_REG = 0x02
+BTN1_ON  = 0xFF
+BTN1_OFF = 0x00
+
+# Remote audio host for Button 2
+AUDIO_HOST = "192.168.196.11"
+AUDIO_USER = "ctrlaudio"
+AUDIO_CONTROL = "Digital"
 
 # systemd service to control
 PUBLISHER_SERVICE = "santa-publisher.service"
@@ -47,13 +60,18 @@ PUBLISHER_SERVICE = "santa-publisher.service"
 # -----------------------------
 def run_cmd(cmd: List[str]) -> bool:
     try:
-        subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            cmd,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
         return True
     except Exception:
         return False
 
 def i2cset_cmd(bus: int, addr: int, reg: int, value: int) -> None:
-    # Uses the i2c-tools command exactly (works even if you don't want smbus2)
+    # i2cset -y 1 0x10 0x01 0xFF
     run_cmd([
         "i2cset",
         "-y",
@@ -63,18 +81,15 @@ def i2cset_cmd(bus: int, addr: int, reg: int, value: int) -> None:
         hex(value),
     ])
 
-def amixer_set_digital(percent: int) -> None:
-    run_cmd(["amixer", "sset", "Digital", f"{int(percent)}%"])
-
-def ssh_amixer_set_digital(host: str, percent: int, user: str = "ctrlaudio") -> None:
-    # Fail-fast + non-interactive
+def ssh_amixer_set(host: str, user: str, control: str, percent: int) -> None:
+    # Fail-fast, non-interactive SSH
     run_cmd([
         "ssh",
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=2",
         "-o", "StrictHostKeyChecking=accept-new",
         f"{user}@{host}",
-        "sudo", "amixer", "sset", "Digital", f"{int(percent)}%"
+        "sudo", "amixer", "sset", control, f"{int(percent)}%"
     ])
 
 def systemctl_restart(service: str) -> None:
@@ -85,74 +100,15 @@ def systemctl_stop(service: str) -> None:
 
 def systemctl_is_active(service: str) -> bool:
     try:
-        r = subprocess.run(["systemctl", "is-active", service], check=False, capture_output=True, text=True)
+        r = subprocess.run(
+            ["systemctl", "is-active", service],
+            check=False,
+            capture_output=True,
+            text=True
+        )
         return r.stdout.strip() == "active"
     except Exception:
         return False
-
-# -----------------------------
-# Relay controller (I2C expander-style)
-# (kept for future expansion; not used for relays 0/1 in raw-i2cset mode)
-# -----------------------------
-class RelayController:
-    """
-    Assumes an 8-bit I2C GPIO expander driving relays on bits 0..7.
-    We keep an output byte and write it on each change.
-    """
-    def __init__(self, bus: int, addr: int, active_low: bool):
-        self.bus_num = bus
-        self.addr = addr
-        self.active_low = active_low
-        self._lock = threading.Lock()
-        self._out = 0x00  # logical ON bits
-
-        try:
-            from smbus2 import SMBus  # type: ignore
-            self._SMBus = SMBus
-            self.available = True
-        except Exception:
-            self._SMBus = None
-            self.available = False
-            print("[relay] WARNING: smbus2 not available, relay control disabled")
-
-        self.all_off()
-
-    def _write_byte(self, value: int) -> None:
-        if not self.available:
-            return
-        try:
-            with self._SMBus(self.bus_num) as bus:
-                bus.write_byte(self.addr, value & 0xFF)
-        except Exception as e:
-            print(f"[relay] I2C write failed: {e}")
-
-    def _apply(self) -> None:
-        if self.active_low:
-            hw = (~self._out) & 0xFF
-        else:
-            hw = self._out & 0xFF
-        self._write_byte(hw)
-
-    def set(self, relay_id: int, on: bool) -> None:
-        if relay_id < 0 or relay_id > 7:
-            return
-        with self._lock:
-            if on:
-                self._out |= (1 << relay_id)
-            else:
-                self._out &= ~(1 << relay_id)
-            self._apply()
-        print(f"[relay] {relay_id} => {'ON' if on else 'OFF'}")
-
-    def get(self, relay_id: int) -> bool:
-        with self._lock:
-            return bool(self._out & (1 << relay_id))
-
-    def all_off(self) -> None:
-        with self._lock:
-            self._out = 0x00
-            self._apply()
-        print("[relay] ALL OFF")
 
 # -----------------------------
 # State
@@ -166,8 +122,9 @@ class LedState:
 class SystemState:
     leds: Dict[int, LedState] = field(default_factory=lambda: {i: LedState() for i in range(4)})
 
-    relay0: bool = False  # Button 0 logical state (raw i2cset)
-    relay1: bool = False  # Button 1 logical state (raw i2cset)
+    relay0: bool = False
+    relay1: bool = False
+    audio_active: bool = False
     publisher_active: bool = False
 
     def to_dict(self):
@@ -178,6 +135,7 @@ class SystemState:
             },
             "relay0": self.relay0,
             "relay1": self.relay1,
+            "audio_active": self.audio_active,
             "publisher_active": self.publisher_active,
         }
 
@@ -249,51 +207,9 @@ class Hub:
         self.state_lock = threading.Lock()
         self.event_q: queue.Queue = queue.Queue()
         self.picos: Dict[str, PicoClient] = {}
-        self._flash_timers: Dict[int, threading.Timer] = {}
-        self._steady_led: Dict[int, LedState] = {i: LedState() for i in range(4)}
-        self.relay = RelayController(I2C_BUS, I2C_ADDR, RELAY_ACTIVE_LOW)
 
-        # initial publisher state
+        # initial service state
         self.state.publisher_active = systemctl_is_active(PUBLISHER_SERVICE)
-
-    def _set_led_now(self, idx: int, mode: str, rgb: Tuple[int, int, int]):
-        with self.state_lock:
-            self.state.leds[idx].mode = mode
-            self.state.leds[idx].rgb = rgb
-
-    def set_led_steady(self, idx: int, mode: str, rgb: Tuple[int, int, int]):
-        # store intended steady state
-        with self.state_lock:
-            self._steady_led[idx] = LedState(mode=mode, rgb=rgb)
-            self.state.leds[idx].mode = mode
-            self.state.leds[idx].rgb = rgb
-        self.broadcast_state()
-
-    def flash_led_pulse(self, idx: int, rgb: Tuple[int, int, int], seconds: float = 0.6):
-        # cancel any existing timer for this LED
-        t = self._flash_timers.get(idx)
-        if t is not None:
-            try:
-                t.cancel()
-            except Exception:
-                pass
-
-        # set flashing immediately
-        self._set_led_now(idx, "FLASH", rgb)
-        self.broadcast_state()
-
-        # schedule revert to last steady state
-        def revert():
-            with self.state_lock:
-                steady = self._steady_led.get(idx, LedState())
-                self.state.leds[idx].mode = steady.mode
-                self.state.leds[idx].rgb = steady.rgb
-            self.broadcast_state()
-
-        timer = threading.Timer(seconds, revert)
-        timer.daemon = True
-        self._flash_timers[idx] = timer
-        timer.start()
 
     def discover_ports(self) -> List[str]:
         if SERIAL_PORTS:
@@ -361,82 +277,85 @@ class Hub:
         kind = kind.upper()
         print(f"[evt] {source} btn={btn} {kind}")
 
-        # Button 0: raw I2C control
-        # SINGLE = i2cset -y 1 0x10 0x01 0xFF
-        # LONG   = i2cset -y 1 0x10 0x01 0x00
+        # -------------------------
+        # Button 0: raw I2C
+        # -------------------------
         if btn == 0:
             if kind == "SINGLE":
-                i2cset_cmd(1, 0x10, 0x01, 0xFF)
+                i2cset_cmd(RAW_I2C_BUS, RAW_I2C_ADDR, BTN0_REG, BTN0_ON)
                 with self.state_lock:
                     self.state.relay0 = True
                     self.state.leds[0].mode = "SOLID"
                     self.state.leds[0].rgb = (0, 255, 0)
 
             elif kind == "LONG":
-                i2cset_cmd(1, 0x10, 0x01, 0x00)
+                i2cset_cmd(RAW_I2C_BUS, RAW_I2C_ADDR, BTN0_REG, BTN0_OFF)
                 with self.state_lock:
                     self.state.relay0 = False
                     self.state.leds[0].mode = "OFF"
                     self.state.leds[0].rgb = (0, 0, 0)
 
-        # Button 1: raw I2C control (same style as button 0)
+        # -------------------------
+        # Button 1: raw I2C (same style)
+        # -------------------------
         elif btn == 1:
             if kind == "SINGLE":
-                i2cset_cmd(1, 0x10, 0x02, 0xFF)
+                i2cset_cmd(RAW_I2C_BUS, RAW_I2C_ADDR, BTN1_REG, BTN1_ON)
                 with self.state_lock:
                     self.state.relay1 = True
                     self.state.leds[1].mode = "SOLID"
                     self.state.leds[1].rgb = (0, 255, 0)
 
             elif kind == "LONG":
-                i2cset_cmd(1, 0x10, 0x02, 0x00)
+                i2cset_cmd(RAW_I2C_BUS, RAW_I2C_ADDR, BTN1_REG, BTN1_OFF)
                 with self.state_lock:
                     self.state.relay1 = False
                     self.state.leds[1].mode = "OFF"
                     self.state.leds[1].rgb = (0, 0, 0)
 
-        # Button 2: remote ALSA Digital volume
+        # -------------------------
+        # Button 2: remote amixer (latched flash until LONG)
+        # SINGLE: set 60% + start flashing
+        # LONG:   set 100% + stop flashing
+        # -------------------------
         elif btn == 2:
             if kind == "SINGLE":
-                ssh_amixer_set_digital("192.168.196.11", 60, user="ctrlaudio")
-                # pulse flash then revert to OFF
-                self.set_led_steady(2, "OFF", (0, 0, 0))
-                self.flash_led_pulse(2, (0, 120, 255), seconds=0.6)
+                ssh_amixer_set(AUDIO_HOST, AUDIO_USER, AUDIO_CONTROL, 60)
+                with self.state_lock:
+                    self.state.audio_active = True
+                    self.state.leds[2].mode = "FLASH"
+                    self.state.leds[2].rgb = (0, 120, 255)
 
             elif kind == "LONG":
-                ssh_amixer_set_digital("192.168.196.11", 100, user="ctrlaudio")
-                self.set_led_steady(2, "OFF", (0, 0, 0))
-                self.flash_led_pulse(2, (0, 120, 255), seconds=0.6)
+                ssh_amixer_set(AUDIO_HOST, AUDIO_USER, AUDIO_CONTROL, 100)
+                with self.state_lock:
+                    self.state.audio_active = False
+                    self.state.leds[2].mode = "OFF"
+                    self.state.leds[2].rgb = (0, 0, 0)
 
-        # Button 3: systemd service control
+        # -------------------------
+        # Button 3: service control (latched flash until LONG)
+        # SINGLE: restart service + start flashing
+        # LONG:   stop service + stop flashing
+        # -------------------------
         elif btn == 3:
             if kind == "SINGLE":
                 systemctl_restart(PUBLISHER_SERVICE)
-                active = systemctl_is_active(PUBLISHER_SERVICE)
                 with self.state_lock:
-                    self.state.publisher_active = active
+                    self.state.publisher_active = True
                     self.state.leds[3].mode = "FLASH"
                     self.state.leds[3].rgb = (255, 255, 255)
 
             elif kind == "LONG":
                 systemctl_stop(PUBLISHER_SERVICE)
-                active = systemctl_is_active(PUBLISHER_SERVICE)
                 with self.state_lock:
-                    self.state.publisher_active = active
-                    self.state.leds[3].mode = "SOLID" if active else "OFF"
-                    self.state.leds[3].rgb = (255, 255, 255)
+                    self.state.publisher_active = False
+                    self.state.leds[3].mode = "OFF"
+                    self.state.leds[3].rgb = (0, 0, 0)
 
-        # ---- sync "truth" where it is safe to do so ----
         # IMPORTANT:
-        # - relay0 and relay1 are controlled via raw i2cset, so there is no reliable read-back here.
-        #   Treat relay0/relay1 as *commanded state* and do NOT overwrite LEDs 0/1.
-        # - Publisher state can be queried safely.
-        with self.state_lock:
-            if btn != 3:
-                self.state.publisher_active = systemctl_is_active(PUBLISHER_SERVICE)
-                self.state.leds[3].mode = "SOLID" if self.state.publisher_active else "OFF"
-                self.state.leds[3].rgb = (255, 255, 255)
-
+        # Do NOT “sync truth” here by calling systemctl_is_active() etc,
+        # because that will overwrite your “latched FLASH until LONG press” behaviour.
         self.broadcast_state()
 
     def process_pico_line(self, port: str, line: str):
