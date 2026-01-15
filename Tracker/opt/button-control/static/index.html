@@ -86,6 +86,24 @@
       display:none;
     }
 
+    .links {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 1px solid #1c2430;
+      font-size: 12px;
+      opacity: 0.6;
+      text-align: center;
+    }
+
+    .footer {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 1px solid #1c2430;
+      font-size: 12px;
+      opacity: 0.6;
+      text-align: center;
+    }
+
     details {
       margin-top: 10px;
       border: 1px solid #1c2430;
@@ -124,7 +142,7 @@
         <div class="btn" data-btn="0">
           <div class="left">
             <div class="name">LED Lighting</div>
-            <div class="hint">Relay 0: SINGLE PRESS=ON • LONG PRESS=OFF</div>
+            <div class="hint">SINGLE PRESS=ON • LONG PRESS=OFF</div>
           </div>
           <div class="right">
             <div class="led" id="led-0"></div>
@@ -135,7 +153,7 @@
         <div class="btn" data-btn="1">
           <div class="left">
             <div class="name">Safety Lighting</div>
-            <div class="hint">Relay 1: SINGLE PRESS=ON • LONG PRESS=OFF</div>
+            <div class="hint">SINGLE PRESS=ON • LONG PRESS=OFF</div>
           </div>
           <div class="right">
             <div class="led" id="led-1"></div>
@@ -146,7 +164,7 @@
         <div class="btn" data-btn="2">
           <div class="left">
             <div class="name">Music Volume</div>
-            <div class="hint">Digital: SINGLE PRESS=60% • LONG PRESS=100%</div>
+            <div class="hint">SINGLE PRESS=60% • LONG PRESS=100%</div>
           </div>
           <div class="right">
             <div class="led" id="led-2"></div>
@@ -157,7 +175,7 @@
         <div class="btn" data-btn="3">
           <div class="left">
             <div class="name">GPS Tracker</div>
-            <div class="hint">Publisher: SINGLE PRESS=ENABLE TRACKING • LONG PRESS=STOP TRACKING</div>
+            <div class="hint">SINGLE PRESS=ENABLE TRACKING • LONG PRESS=STOP TRACKING</div>
           </div>
           <div class="right">
             <div class="led" id="led-3"></div>
@@ -174,7 +192,24 @@
       </details>
     </div>
   </div>
-
+<footer class="links">
+  <a href="http://192.168.8.11:6680/iris/" target="_blank">Music Player</a>
+  -
+  |
+  -
+  <a href="http://192.168.100.10:8060/" target="_blank">Sleigh Network Control Panel</a>
+  -
+  |
+  -
+  <a href="https://santa.pontypriddroundtable.org.uk" target="_blank">Tracker Map</a>
+  -
+  |
+  -
+  Network Control Panel Key:  aebwhsregS346hgwNFRvdbg42345ngbdbklvueq894WEBFd3
+</footer>
+<footer class="footer">
+  Sleigh Control Panel • v1.0 • Copyright &copy; 2026 Brady Stewart
+</footer>
   <script src="/socket.io/socket.io.js"></script>
   <script>
     function setLed(i, mode, rgb){
